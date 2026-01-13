@@ -1,31 +1,63 @@
 
 import { generateTestCases } from "../api";
 import { useMemo, useState } from "react";
+
 export default function TestCases() {
   const [requirementText, setRequirementText] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
 
+  // NEW: feature tabs (buttons)
+  const [feature, setFeature] = useState("testcases"); // testcases | risks | regression | summary
+
   const charCount = useMemo(() => requirementText.length, [requirementText]);
 
-  async function onGenerate() {
-    setError("");
-    setResult(null);
-    setLoading(true);
+ async function onGenerate() {
+  setError("");
+  setResult(null);
+  setLoading(true);
 
-    try {
+  try {
+    const context = { domain: "Automotive/Railway" };
+
+    if (feature === "testcases") {
       const data = await generateTestCases({
         requirementText,
-        context: { domain: "Automotive/Railway", style: "manual test cases" }
+        context: { ...context, style: "manual test cases" }
       });
       setResult(data);
-    } catch (e) {
-      setError(e?.message || "Something went wrong");
-    } finally {
-      setLoading(false);
     }
+
+    if (feature === "risks") {
+      const data = await analyzeRisks({ requirementText, context });
+      setResult(data);
+    }
+
+    if (feature === "regression") {
+      const changedAreas = changedAreasText
+        .split(/[\n,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const data = await suggestRegression({
+        changedAreas,
+        changeNotes,
+        context
+      });
+      setResult(data);
+    }
+
+    if (feature === "summary") {
+      const data = await summarizeResults({ rawText, context });
+      setResult(data);
+    }
+  } catch (e) {
+    setError(e?.message || "Something went wrong");
+  } finally {
+    setLoading(false);
   }
+}
 
   function useExample() {
     setRequirementText(
@@ -58,15 +90,54 @@ Acceptance criteria:
     await navigator.clipboard.writeText(lines.join("\n---\n\n"));
   }
 
+  function FeatureButton({ id, label }) {
+    const active = feature === id;
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setFeature(id);
+          setResult(null);
+          setError("");
+        }}
+        className={
+          active
+            ? "rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white"
+            : "rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        }
+      >
+        {label}
+      </button>
+    );
+  }
+
   return (
     <div className="grid gap-4">
+      {/* NEW: Feature buttons */}
+      <div className="flex flex-wrap gap-2">
+        <FeatureButton id="testcases" label="Generering av testfall från krav" />
+        <FeatureButton id="risks" label="Identifiering av riskområden" />
+        <FeatureButton id="regression" label="Förslag på regressionstester" />
+        <FeatureButton id="summary" label="Sammanfattning av testresultat" />
+      </div>
+
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-blue-800">Requirements → Test Cases</h2>
+          <h2 className="text-xl font-bold text-blue-800">
+            {feature === "testcases" && "Requirements → Test Cases"}
+            {feature === "risks" && "Requirements → Risk Areas (Kommer snart)"}
+            {feature === "regression" && "Changes → Regression Suggestions (Kommer snart)"}
+            {feature === "summary" && "Results → Summary (Kommer snart)"}
+          </h2>
+
           <p className="text-sm text-slate-600">
-            Paste a requirement/user story and generate structured, high-value test cases.
+            {feature === "testcases" &&
+              "Paste a requirement/user story and generate structured, high-value test cases."}
+            {feature !== "testcases" &&
+              "This feature is planned. Activate it later when backend endpoints are ready."}
           </p>
         </div>
+
         {result && (
           <div className="flex gap-2">
             <button
@@ -148,7 +219,7 @@ Acceptance criteria:
 
           {!result && !loading && (
             <div className="mt-3 text-sm text-slate-500">
-              Generated test cases will appear here.
+              Generated output will appear here.
             </div>
           )}
 
@@ -225,4 +296,3 @@ Acceptance criteria:
     </div>
   );
 }
-

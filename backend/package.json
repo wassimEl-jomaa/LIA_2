@@ -2,9 +2,9 @@
   "name": "ai-test-assistant-backend",
   "version": "1.0.0",
   "type": "module",
-  "main": "src/server.js",
+  "main": "src/servers.js",
   "scripts": {
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch src/servers.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
