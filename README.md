@@ -60,7 +60,7 @@ pip install -r requirements.txt
 
 
 ### Start the FastAPI server
-python -m uvicorn app:app --reload
+uvicorn app.main:app --reload
 ### Open in browser
 👉 http://127.0.0.1:8000/docs
 
