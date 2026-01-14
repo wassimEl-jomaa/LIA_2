@@ -16,16 +16,23 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    existing = (await db.execute(select(Project).where(Project.name == payload.name))).scalars().first()
+    # per-user uniqueness (recommended) OR global uniqueness
+    stmt = select(Project).where(Project.name == payload.name, Project.owner_user_id == user.id)
+    existing = (await db.execute(stmt)).scalars().first()
     if existing:
-        raise HTTPException(status_code=400, detail="Project name already exists")
+        raise HTTPException(status_code=400, detail="Project already exists")
 
     p = Project(name=payload.name, owner_user_id=user.id)
     db.add(p)
     await db.commit()
     await db.refresh(p)
-    return ProjectOut(id=p.id, name=p.name, owner_user_id=p.owner_user_id, created_at=str(p.created_at))
 
+    return ProjectOut(
+        id=p.id,
+        name=p.name,
+        owner_user_id=p.owner_user_id,
+        created_at=str(p.created_at)
+    )
 
 @router.get("", response_model=list[ProjectOut])
 async def list_projects(
@@ -33,4 +40,7 @@ async def list_projects(
     user: User = Depends(get_current_user),
 ):
     rows = (await db.execute(select(Project).where(Project.owner_user_id == user.id))).scalars().all()
-    return [ProjectOut(id=r.id, name=r.name, owner_user_id=r.owner_user_id, created_at=str(r.created_at)) for r in rows]
+    return [
+        ProjectOut(id=r.id, name=r.name, owner_user_id=r.owner_user_id, created_at=str(r.created_at))
+        for r in rows
+    ]

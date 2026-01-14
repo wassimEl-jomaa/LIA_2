@@ -3,7 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from dotenv import load_dotenv
 import os
-
+from fastapi.responses import PlainTextResponse
+from fastapi import Request
+import traceback
 from .auth import router as auth_router, get_current_user
 from .projects import router as projects_router
 from .db import Base, engine, get_db
@@ -15,6 +17,13 @@ load_dotenv()
 app = FastAPI(title="AI Assistant for Testers (Noor Engineering MVP)")
 app.include_router(auth_router)
 app.include_router(projects_router)  # requires projects.py
+
+# DEBUG: show full traceback in Swagger when 500 happens
+@app.exception_handler(Exception)
+async def debug_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exc()
+    print(tb)  # prints in terminal
+    return PlainTextResponse(tb, status_code=500)
 
 
 @app.on_event("startup")

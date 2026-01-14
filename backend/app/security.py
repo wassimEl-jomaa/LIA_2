@@ -15,7 +15,8 @@ def new_token() -> str:
     return secrets.token_urlsafe(32)
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    # return naive UTC datetime to match SQLite stored datetimes
+    return datetime.utcnow()
 
 def expires_in_days(days: int = 7) -> datetime:
     return utc_now() + timedelta(days=days)
