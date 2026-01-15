@@ -5,9 +5,10 @@ export default function Header() {
   const navigate = useNavigate();
 
   const isLoggedIn = Boolean(localStorage.getItem("token"));
+  const activeProjectId = localStorage.getItem("active_project_id");
 
   const baseLink =
-    "px-3 py-2 rounded-md text-sm font-semibold transition";
+    "px-3 py-2 rounded-md text-sm font-semibold transition whitespace-nowrap";
 
   const navLinkClass = ({ isActive }) =>
     `${baseLink} ${
@@ -19,6 +20,7 @@ export default function Header() {
   function handleLogout() {
     localStorage.removeItem("token");
     localStorage.removeItem("token_expires_at");
+    localStorage.removeItem("active_project_id");
     navigate("/login");
   }
 
@@ -27,11 +29,11 @@ export default function Header() {
       <div className="mx-auto max-w-6xl w-full px-4 flex items-center justify-between">
 
         {/* Logo */}
-        <Link to="/" className="flex items-center">
+        <Link to="/" className="flex items-center gap-2">
           <img
             src={logo}
             alt="AI Test Assistant"
-            className="h-14 max-h-14 w-auto object-contain"
+            className="h-12 w-auto object-contain"
           />
         </Link>
 
@@ -41,16 +43,25 @@ export default function Header() {
             Home
           </NavLink>
 
-          {/* Test Cases – ONLY when logged in */}
-          {isLoggedIn && (
-            <NavLink to="/testcases" className={navLinkClass}>
-              Test Cases
-            </NavLink>
-          )}
-
           <NavLink to="/about" className={navLinkClass}>
             About Us
           </NavLink>
+
+          {/* Test Cases */}
+          {isLoggedIn && (
+            activeProjectId ? (
+              <NavLink to="/testcases" className={navLinkClass}>
+                Test Cases
+              </NavLink>
+            ) : (
+              <span
+                className={`${baseLink} cursor-not-allowed bg-blue-600 text-white/60`}
+                title="Select a project first"
+              >
+                Test Cases
+              </span>
+            )
+          )}
 
           {/* Login / Logout */}
           {isLoggedIn ? (
@@ -69,7 +80,6 @@ export default function Header() {
             </NavLink>
           )}
         </nav>
-
       </div>
     </header>
   );
