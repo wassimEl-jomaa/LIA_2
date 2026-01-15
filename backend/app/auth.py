@@ -5,7 +5,7 @@ from sqlalchemy import select, delete
 
 from .db import get_db
 from .models import User, Token
-from .schemas import RegisterIn, LoginIn, TokenOut
+from .schemas import RegisterIn, LoginIn, TokenOut, UserMeOut
 from .security import hash_password, verify_password, new_token, expires_in_days, utc_now
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -96,3 +96,13 @@ async def logout(
     await db.execute(delete(Token).where(Token.token == token_value))
     await db.commit()
     return {"status": "logged_out"}
+@router.get("/me", response_model=UserMeOut)
+async def me(current_user: User = Depends(get_current_user)):
+    return UserMeOut(
+        id=current_user.id,
+        email=current_user.email,
+        name=current_user.name,
+        role_id=current_user.role_id,
+        organization_id=current_user.organization_id,
+        created_at=str(current_user.created_at),
+    )

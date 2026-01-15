@@ -6,6 +6,8 @@ import AboutUs from "./pages/AboutUs.jsx";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import MyProjects from "./pages/MyProjects";
+import SelectedProject from "./pages/SelectedProject";
+import RequestLogDetails from "./pages/RequestLogDetails";
 export default function App() {
   return (
     <>
@@ -21,6 +23,8 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/projects" element={<MyProjects />} />
+          <Route path="/projects/:projectId" element={<SelectedProject />} />
+          <Route path="/projects/:projectId/logs/:logId" element={<RequestLogDetails />} />
         </Routes>
       </main>
     </>

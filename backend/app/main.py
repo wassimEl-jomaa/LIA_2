@@ -11,7 +11,7 @@ from .auth import router as auth_router, get_current_user
 from .projects import router as projects_router
 from .db import Base, engine, get_db
 from .models import RequestLog, User, Project
-from .schemas import TestCasesIn, RiskIn, RegressionIn, SummaryIn, AIOut, HistoryItem
+from .schemas import TestCasesIn, RiskIn, RegressionIn, SummaryIn, AIOut, HistoryItem, RequestLogOut
 from .ai import call_ai_json, prompt_testcases, prompt_risk, prompt_regression, prompt_summary
 load_dotenv()
 
@@ -215,3 +215,27 @@ async def history(
         )
         for r in rows
     ]
+@app.get("/api/history/{log_id}", response_model=RequestLogOut)
+async def history_detail(
+    log_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    # Hämta logg
+    log = (await db.execute(select(RequestLog).where(RequestLog.id == log_id))).scalars().first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+
+    # Säkerhet: kontrollera att användaren äger projektet
+    project = (await db.execute(select(Project).where(Project.id == log.project_id))).scalars().first()
+    if not project or project.owner_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    return RequestLogOut(
+        id=log.id,
+        project_id=log.project_id,
+        endpoint=log.endpoint,
+        input_text=log.input_text,
+        output_text=log.output_text,
+        created_at=str(log.created_at),
+    )

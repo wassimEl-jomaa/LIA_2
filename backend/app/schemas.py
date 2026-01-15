@@ -61,7 +61,13 @@ class RiskIn(BaseIn):
 class RegressionIn(BaseIn):
     change_description: str = Field(min_length=5)
     changed_components: Optional[list[str]] = None
-
+class RequestLogOut(BaseModel):
+    id: int
+    project_id: int
+    endpoint: str
+    input_text: str
+    output_text: str
+    created_at: str
 
 class SummaryIn(BaseIn):
     test_results: str = Field(min_length=5)
@@ -80,4 +86,11 @@ class HistoryItem(BaseModel):
     project_id: int
     endpoint: str
     created_at: str
-
+# ---------- USER ----------
+class UserMeOut(BaseModel):
+    id: int
+    email: str
+    name: str
+    role_id: int | None = None
+    organization_id: int | None = None
+    created_at: str
