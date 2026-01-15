@@ -1,63 +1,66 @@
 
+import { useMemo, useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { generateTestCases } from "../api";
-import { useMemo, useState } from "react";
 
 export default function TestCases() {
+  const navigate = useNavigate();
+
   const [requirementText, setRequirementText] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
 
-  // NEW: feature tabs (buttons)
+  // Feature tabs
   const [feature, setFeature] = useState("testcases"); // testcases | risks | regression | summary
+
+  // Active project
+  const [activeProjectId, setActiveProjectId] = useState(
+    localStorage.getItem("active_project_id")
+  );
+
+  useEffect(() => {
+    // If user refreshes, ensure state stays in sync
+    setActiveProjectId(localStorage.getItem("active_project_id"));
+  }, []);
 
   const charCount = useMemo(() => requirementText.length, [requirementText]);
 
- async function onGenerate() {
-  setError("");
-  setResult(null);
-  setLoading(true);
-
-  try {
-    const context = { domain: "Automotive/Railway" };
-
-    if (feature === "testcases") {
-      const data = await generateTestCases({
-        requirementText,
-        context: { ...context, style: "manual test cases" }
-      });
-      setResult(data);
-    }
-
-    if (feature === "risks") {
-      const data = await analyzeRisks({ requirementText, context });
-      setResult(data);
-    }
-
-    if (feature === "regression") {
-      const changedAreas = changedAreasText
-        .split(/[\n,]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      const data = await suggestRegression({
-        changedAreas,
-        changeNotes,
-        context
-      });
-      setResult(data);
-    }
-
-    if (feature === "summary") {
-      const data = await summarizeResults({ rawText, context });
-      setResult(data);
-    }
-  } catch (e) {
-    setError(e?.message || "Something went wrong");
-  } finally {
-    setLoading(false);
+  function handleBack() {
+    const pid = localStorage.getItem("active_project_id");
+    if (!pid) return navigate("/projects"); // fallback to MyProjects
+    navigate(`/projects/${pid}`);
   }
-}
+
+  async function onGenerate() {
+    setError("");
+    setResult(null);
+    setLoading(true);
+
+    try {
+      if (!activeProjectId) {
+        throw new Error("No active project selected. Please select a project first.");
+      }
+
+      const context = { domain: "Automotive/Railway" };
+
+      if (feature === "testcases") {
+        const data = await generateTestCases({
+          requirementText,
+          context: { ...context, style: "manual test cases" },
+        });
+        setResult(data);
+      }
+
+      if (feature !== "testcases") {
+        throw new Error("This feature is planned (backend not ready yet).");
+      }
+    } catch (e) {
+      setError(e?.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function useExample() {
     setRequirementText(
@@ -103,7 +106,7 @@ Acceptance criteria:
         className={
           active
             ? "rounded-full bg-blue-700 px-4 py-2 text-sm font-semibold text-white"
-            : "rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            : "rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
         }
       >
         {label}
@@ -112,185 +115,208 @@ Acceptance criteria:
   }
 
   return (
-    <div className="grid gap-4">
-      {/* NEW: Feature buttons */}
-      <div className="flex flex-wrap gap-2">
-        <FeatureButton id="testcases" label="Generering av testfall från krav" />
-        <FeatureButton id="risks" label="Identifiering av riskområden" />
-        <FeatureButton id="regression" label="Förslag på regressionstester" />
-        <FeatureButton id="summary" label="Sammanfattning av testresultat" />
-      </div>
+    <div className="min-h-[calc(100vh-56px)] bg-gray-50 px-4 py-8">
+      <div className="mx-auto max-w-6xl space-y-6">
+        {/* Top header card */}
+        <div className="bg-white rounded-2xl shadow border border-gray-100 p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Test Cases</h1>
+              <p className="text-sm text-gray-600 mt-1">
+                Generate structured, high-value test cases from requirements.
+              </p>
 
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-blue-800">
-            {feature === "testcases" && "Requirements → Test Cases"}
-            {feature === "risks" && "Requirements → Risk Areas (Kommer snart)"}
-            {feature === "regression" && "Changes → Regression Suggestions (Kommer snart)"}
-            {feature === "summary" && "Results → Summary (Kommer snart)"}
-          </h2>
+              <div className="mt-3 text-xs text-gray-600">
+                Active project_id:{" "}
+                <span className="font-semibold">
+                  {activeProjectId || "None"}
+                </span>
+              </div>
+            </div>
 
-          <p className="text-sm text-slate-600">
-            {feature === "testcases" &&
-              "Paste a requirement/user story and generate structured, high-value test cases."}
-            {feature !== "testcases" &&
-              "This feature is planned. Activate it later when backend endpoints are ready."}
-          </p>
-        </div>
+            <div className="flex flex-wrap gap-2">
+              {/* ✅ Back */}
+              <button
+                onClick={handleBack}
+                className="rounded-md bg-white px-4 py-2 font-semibold text-gray-800 border border-gray-200 hover:bg-gray-50"
+              >
+                Back
+              </button>
 
-        {result && (
-          <div className="flex gap-2">
-            <button
-              onClick={copyReadable}
-              type="button"
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"
-            >
-              Copy Test Cases
-            </button>
-            <button
-              onClick={copyJson}
-              type="button"
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"
-            >
-              Copy JSON
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Two-column layout on desktop */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Input */}
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-semibold text-slate-800">Input</div>
-            <div className="text-xs text-slate-500">{charCount} chars</div>
+              {result && (
+                <>
+                  <button
+                    onClick={copyReadable}
+                    type="button"
+                    className="rounded-md bg-white px-4 py-2 font-semibold text-gray-800 border border-gray-200 hover:bg-gray-50"
+                  >
+                    Copy Test Cases
+                  </button>
+                  <button
+                    onClick={copyJson}
+                    type="button"
+                    className="rounded-md bg-white px-4 py-2 font-semibold text-gray-800 border border-gray-200 hover:bg-gray-50"
+                  >
+                    Copy JSON
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
-          <textarea
-            value={requirementText}
-            onChange={(e) => setRequirementText(e.target.value)}
-            rows={12}
-            placeholder="Paste requirement / user story here..."
-            className="mt-2 w-full rounded-lg border border-slate-300 p-3 focus:outline-none focus:ring-2 focus:ring-blue-200"
-          />
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              onClick={useExample}
-              type="button"
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
-            >
-              Use example
-            </button>
-
-            <button
-              onClick={onGenerate}
-              disabled={loading || !requirementText.trim()}
-              type="button"
-              className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-600 disabled:opacity-60"
-            >
-              {loading ? "Generating..." : "Generate"}
-            </button>
-
-            <button
-              onClick={() => {
-                setRequirementText("");
-                setResult(null);
-                setError("");
-              }}
-              type="button"
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
-            >
-              Clear
-            </button>
+          {/* Feature tabs */}
+          <div className="mt-5 flex flex-wrap gap-2">
+            <FeatureButton id="testcases" label="Requirements → Test Cases" />
+            <FeatureButton id="risks" label="Risk Areas (Soon)" />
+            <FeatureButton id="regression" label="Regression (Soon)" />
+            <FeatureButton id="summary" label="Summary (Soon)" />
           </div>
+
+          {!activeProjectId && (
+            <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              No active project selected. Go back and select a project first.
+            </div>
+          )}
 
           {error && (
-            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           )}
         </div>
 
-        {/* Output */}
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-sm font-semibold text-slate-800">Output</div>
-
-          {!result && !loading && (
-            <div className="mt-3 text-sm text-slate-500">
-              Generated output will appear here.
+        {/* Two-column layout */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Input card */}
+          <div className="bg-white rounded-2xl shadow border border-gray-100 p-6">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Input</div>
+              <div className="text-xs text-gray-500">{charCount} chars</div>
             </div>
-          )}
 
-          {loading && (
-            <div className="mt-3 text-sm text-slate-600">
-              Generating… please wait.
+            <textarea
+              value={requirementText}
+              onChange={(e) => setRequirementText(e.target.value)}
+              rows={12}
+              placeholder="Paste requirement / user story here..."
+              className="mt-3 w-full rounded-lg border border-gray-300 p-3 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                onClick={useExample}
+                type="button"
+                className="rounded-md bg-white px-4 py-2 font-semibold text-gray-800 border border-gray-200 hover:bg-gray-50"
+              >
+                Use example
+              </button>
+
+              <button
+                onClick={onGenerate}
+                disabled={loading || !requirementText.trim() || !activeProjectId}
+                type="button"
+                className="rounded-md bg-blue-700 px-4 py-2 text-white font-semibold hover:bg-blue-800 disabled:opacity-60"
+                title={!activeProjectId ? "Select a project first" : ""}
+              >
+                {loading ? "Generating..." : "Generate"}
+              </button>
+
+              <button
+                onClick={() => {
+                  setRequirementText("");
+                  setResult(null);
+                  setError("");
+                }}
+                type="button"
+                className="rounded-md bg-white px-4 py-2 font-semibold text-gray-800 border border-gray-200 hover:bg-gray-50"
+              >
+                Clear
+              </button>
             </div>
-          )}
+          </div>
 
-          {result && (
-            <div className="mt-3 grid gap-3">
-              <div className="text-sm font-semibold text-blue-800">
-                Test cases ({result.testCases?.length || 0})
+          {/* Output card */}
+          <div className="bg-white rounded-2xl shadow border border-gray-100 p-6">
+            <div className="text-sm font-semibold text-gray-800">Output</div>
+
+            {!result && !loading && (
+              <div className="mt-3 text-sm text-gray-500">
+                Generated output will appear here.
               </div>
+            )}
 
-              {result.testCases?.map((tc, idx) => (
-                <div
-                  key={idx}
-                  className="rounded-xl border border-slate-200 bg-slate-50 p-4"
-                >
-                  <div className="font-semibold text-slate-900">
-                    {tc.title}{" "}
-                    <span className="font-normal text-slate-500">
-                      — {tc.priority}
-                    </span>
-                  </div>
+            {loading && (
+              <div className="mt-3 text-sm text-gray-600">
+                Generating… please wait.
+              </div>
+            )}
 
-                  {!!tc.preconditions?.length && (
-                    <div className="mt-3">
-                      <div className="text-sm font-semibold text-slate-700">
-                        Preconditions
-                      </div>
-                      <ul className="list-disc pl-5 text-sm text-slate-700">
-                        {tc.preconditions.map((p, i) => (
-                          <li key={i}>{p}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {!!tc.steps?.length && (
-                    <div className="mt-3">
-                      <div className="text-sm font-semibold text-slate-700">
-                        Steps
-                      </div>
-                      <ol className="list-decimal pl-5 text-sm text-slate-700">
-                        {tc.steps.map((s, i) => (
-                          <li key={i}>{s}</li>
-                        ))}
-                      </ol>
-                    </div>
-                  )}
-
-                  <div className="mt-3 text-sm text-slate-700">
-                    <span className="font-semibold">Expected:</span> {tc.expected}
-                  </div>
+            {result && (
+              <div className="mt-4 space-y-3">
+                <div className="text-sm font-semibold text-blue-800">
+                  Test cases ({result.testCases?.length || 0})
                 </div>
-              ))}
 
-              {!!result.missingInfo?.length && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
-                  <div className="font-semibold text-amber-900">Missing info</div>
-                  <ul className="mt-2 list-disc pl-5 text-amber-900">
-                    {result.missingInfo.map((m, i) => (
-                      <li key={i}>{m}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
+                {result.testCases?.map((tc, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-xl border border-gray-200 bg-gray-50 p-4"
+                  >
+                    <div className="font-semibold text-gray-900">
+                      {tc.title}{" "}
+                      <span className="font-normal text-gray-500">
+                        — {tc.priority}
+                      </span>
+                    </div>
+
+                    {!!tc.preconditions?.length && (
+                      <div className="mt-3">
+                        <div className="text-sm font-semibold text-gray-700">
+                          Preconditions
+                        </div>
+                        <ul className="list-disc pl-5 text-sm text-gray-700">
+                          {tc.preconditions.map((p, i) => (
+                            <li key={i}>{p}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {!!tc.steps?.length && (
+                      <div className="mt-3">
+                        <div className="text-sm font-semibold text-gray-700">
+                          Steps
+                        </div>
+                        <ol className="list-decimal pl-5 text-sm text-gray-700">
+                          {tc.steps.map((s, i) => (
+                            <li key={i}>{s}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+
+                    <div className="mt-3 text-sm text-gray-700">
+                      <span className="font-semibold">Expected:</span>{" "}
+                      {tc.expected}
+                    </div>
+                  </div>
+                ))}
+
+                {!!result.missingInfo?.length && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
+                    <div className="font-semibold text-amber-900">
+                      Missing info
+                    </div>
+                    <ul className="mt-2 list-disc pl-5 text-amber-900">
+                      {result.missingInfo.map((m, i) => (
+                        <li key={i}>{m}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
