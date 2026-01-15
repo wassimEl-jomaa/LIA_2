@@ -126,3 +126,15 @@ class OrganizationOut(BaseModel):
     city: str | None
     country: str | None
     created_at: str
+class RoleCreateIn(BaseModel):
+    name: str = Field(min_length=2, max_length=50)
+    is_admin: bool = False
+
+class RoleUpdateIn(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=50)
+    is_admin: bool | None = None
+
+class RoleOut(BaseModel):
+    id: int
+    name: str
+    is_admin: bool

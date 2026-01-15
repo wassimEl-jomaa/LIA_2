@@ -4,7 +4,7 @@ import argparse
 import traceback
 from dotenv import load_dotenv
 from sqlalchemy import select, delete
-
+from app.models import Role, Organization
 from app.db import engine, AsyncSessionLocal, Base
 from app.models import User, Project, Token, Role, Organization
 from app.security import hash_password, new_token, expires_in_days
@@ -37,16 +37,30 @@ async def drop_all_tables():
 async def seed_demo():
     print("➡️ Seeding demo data...")
     async with AsyncSessionLocal() as db:
-        # Role
-        role = (await db.execute(select(Role).where(Role.name == DEMO_ROLE_NAME))).scalars().first()
-        if not role:
-            role = Role(name=DEMO_ROLE_NAME)
-            db.add(role)
+                # Roles (create admin + tester)
+        admin_role = (await db.execute(select(Role).where(Role.name == "admin"))).scalars().first()
+        if not admin_role:
+            admin_role = Role(name="admin", is_admin=True)
+            db.add(admin_role)
             await db.commit()
-            await db.refresh(role)
-            print(f"✅ Created role: {role.name} (id={role.id})")
+            await db.refresh(admin_role)
+            print(f"✅ Created role: {admin_role.name} (id={admin_role.id})")
         else:
-            print(f"ℹ️ Role exists: {role.name} (id={role.id})")
+            print(f"ℹ️ Role exists: {admin_role.name} (id={admin_role.id})")
+
+        tester_role = (await db.execute(select(Role).where(Role.name == DEMO_ROLE_NAME))).scalars().first()
+        if not tester_role:
+            tester_role = Role(name=DEMO_ROLE_NAME, is_admin=False)
+            db.add(tester_role)
+            await db.commit()
+            await db.refresh(tester_role)
+            print(f"✅ Created role: {tester_role.name} (id={tester_role.id})")
+        else:
+            if user.role_id != admin_role.id:
+                user.role_id = admin_role.id
+                await db.commit()
+                print("✅ Updated demo user role to admin")
+
 
         # Organization
         org = (await db.execute(select(Organization).where(Organization.name == DEMO_ORG_NAME))).scalars().first()
@@ -66,7 +80,7 @@ async def seed_demo():
                 email=DEMO_EMAIL,
                 hashed_password=hash_password(DEMO_PASSWORD),
                 name=DEMO_USER_NAME,
-                role_id=role.id,
+                role_id=admin_role.id,
                 organization_id=org.id,
                 tel=None,
                 address=None,
