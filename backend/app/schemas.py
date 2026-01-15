@@ -94,3 +94,35 @@ class UserMeOut(BaseModel):
     role_id: int | None = None
     organization_id: int | None = None
     created_at: str
+
+# ---------- ORGANIZATIONS ----------
+class OrganizationCreateIn(BaseModel):
+    name: str = Field(min_length=2, max_length=150)
+    org_number: str | None = Field(default=None, max_length=50)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=50)
+    address: str | None = Field(default=None, max_length=255)
+    city: str | None = Field(default=None, max_length=120)
+    country: str | None = Field(default=None, max_length=120)
+
+
+class OrganizationUpdateIn(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=150)
+    org_number: str | None = Field(default=None, max_length=50)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=50)
+    address: str | None = Field(default=None, max_length=255)
+    city: str | None = Field(default=None, max_length=120)
+    country: str | None = Field(default=None, max_length=120)
+
+
+class OrganizationOut(BaseModel):
+    id: int
+    name: str
+    org_number: str | None
+    email: str | None
+    phone: str | None
+    address: str | None
+    city: str | None
+    country: str | None
+    created_at: str

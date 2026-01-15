@@ -84,6 +84,45 @@ class User(Base):
 
     projects = relationship("Project", back_populates="owner", cascade="all, delete")
     token = relationship("Token", back_populates="user", uselist=False, cascade="all, delete")
+# =========================
+# REQUIREMENTS
+# =========================
+class Requirement(Base):
+    __tablename__ = "requirements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    acceptance_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    source: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="manual"
+    )
+
+    external_id: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    # Relations
+    project = relationship("Project", back_populates="requirements")
 
 
 # =========================
@@ -136,7 +175,7 @@ class Project(Base):
     owner = relationship("User", back_populates="projects")
     organization = relationship("Organization", back_populates="projects")
     logs = relationship("RequestLog", back_populates="project", cascade="all, delete")
-
+    requirements = relationship("Requirement", back_populates="project", cascade="all, delete")
 
 # =========================
 # REQUEST LOGS (AI HISTORY)
