@@ -3,7 +3,9 @@ import Header from "./pages/Header.jsx";
 import Home from "./pages/Home.jsx";
 import TestCases from "./pages/TestCases.jsx";
 import AboutUs from "./pages/AboutUs.jsx";
-
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import MyProjects from "./pages/MyProjects";
 export default function App() {
   return (
     <>
@@ -16,6 +18,9 @@ export default function App() {
           {/* OTHER PAGES */}
           <Route path="/testcases" element={<TestCases />} />
           <Route path="/about" element={<AboutUs />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/projects" element={<MyProjects />} />
         </Routes>
       </main>
     </>

@@ -4,6 +4,45 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
 # =========================
+# ORGANIZATIONS
+# =========================
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(150), unique=True, index=True, nullable=False)
+
+    # optional company info
+    org_number: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    created_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    users = relationship("User", back_populates="organization", cascade="all, delete")
+    projects = relationship("Project", back_populates="organization", cascade="all, delete")
+
+
+# =========================
+# ROLES
+# =========================
+class Role(Base):
+    __tablename__ = "roles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+
+    users = relationship("User", back_populates="role")
+
+
+# =========================
 # USERS
 # =========================
 class User(Base):
@@ -13,11 +52,35 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
 
+    # profile fields
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    tel: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    # role + org
+    role_id: Mapped[int] = mapped_column(
+        ForeignKey("roles.id"),
+        nullable=False,
+        index=True
+    )
+
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id"),
+        nullable=True,
+        index=True
+    )
+
     created_at: Mapped[str] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False
     )
+
+    # relationships
+    role = relationship("Role", back_populates="users")
+    organization = relationship("Organization", back_populates="users")
 
     projects = relationship("Project", back_populates="owner", cascade="all, delete")
     token = relationship("Token", back_populates="user", uselist=False, cascade="all, delete")
@@ -48,7 +111,15 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(150), unique=True, index=True, nullable=False)
+
+    name: Mapped[str] = mapped_column(String(150), index=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id"),
+        nullable=True,
+        index=True
+    )
 
     owner_user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -63,6 +134,7 @@ class Project(Base):
     )
 
     owner = relationship("User", back_populates="projects")
+    organization = relationship("Organization", back_populates="projects")
     logs = relationship("RequestLog", back_populates="project", cascade="all, delete")
 
 
@@ -93,4 +165,3 @@ class RequestLog(Base):
     )
 
     project = relationship("Project", back_populates="logs")
-

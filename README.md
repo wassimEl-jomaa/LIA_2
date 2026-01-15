@@ -58,7 +58,8 @@ source .venv/Scripts/activate  # Windows
 
 pip install -r requirements.txt  
 
-
+### Reset DB:
+source
 ### Start the FastAPI server
 uvicorn app.main:app --reload
 ### Open in browser

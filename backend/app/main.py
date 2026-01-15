@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from dotenv import load_dotenv
 import os
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi import Request
 import traceback
@@ -15,6 +16,16 @@ from .ai import call_ai_json, prompt_testcases, prompt_risk, prompt_regression, 
 load_dotenv()
 
 app = FastAPI(title="AI Assistant for Testers (Noor Engineering MVP)")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(auth_router)
 app.include_router(projects_router)  # requires projects.py
 
