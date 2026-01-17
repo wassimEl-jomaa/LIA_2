@@ -48,23 +48,37 @@ async def get_current_user(
 
 @router.post("/register", response_model=TokenOut)
 async def register(payload: RegisterIn, db: AsyncSession = Depends(get_db)):
+
     existing = (await db.execute(select(User).where(User.email == payload.email))).scalars().first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    user = User(email=payload.email, hashed_password=hash_password(payload.password))
+    user = User(
+        email=payload.email,
+        hashed_password=hash_password(payload.password),
+
+        name=payload.name,
+        tel=payload.tel,
+        address=payload.address,
+        city=payload.city,
+        country=payload.country,
+
+        role_id=payload.role_id,
+        organization_id=payload.organization_id,
+    )
+
     db.add(user)
     await db.commit()
     await db.refresh(user)
 
+    # create token
     tok = new_token()
     exp = expires_in_days(7)
-
-    await db.execute(delete(Token).where(Token.user_id == user.id))
     db.add(Token(user_id=user.id, token=tok, expires_at=exp))
     await db.commit()
 
     return TokenOut(token=tok, expires_at=exp.isoformat())
+
 
 
 @router.post("/login", response_model=TokenOut)

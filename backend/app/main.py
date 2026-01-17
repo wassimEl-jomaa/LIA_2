@@ -13,6 +13,8 @@ from .db import Base, engine, get_db
 from .organizations import router as organizations_router
 from .roles import router as roles_router
 from .users import router as users_router
+from .ml import predict_category
+from .schemas import RequirementPredictIn, RequirementPredictOut
 from .models import RequestLog, User, Project
 from .schemas import TestCasesIn, RiskIn, RegressionIn, SummaryIn, AIOut, HistoryItem, RequestLogOut
 from .ai import call_ai_json, prompt_testcases, prompt_risk, prompt_regression, prompt_summary
@@ -51,7 +53,18 @@ async def on_startup():
     if not os.getenv("OPENAI_API_KEY"):
         print("WARNING: OPENAI_API_KEY is not set. Endpoints will fail until it is set.")
 
-
+@app.post("/api/requirements/predict", response_model=RequirementPredictOut)
+async def predict_requirement_category(
+    payload: RequirementPredictIn,
+    user: User = Depends(get_current_user),
+):
+    # user must be logged in (token auth)
+    pred, conf, probs = predict_category(payload.text)
+    return RequirementPredictOut(
+        predicted_category=pred,
+        confidence=conf,
+        probabilities=probs,
+    )
 @app.get("/health")
 def health():
     return {"status": "ok"}

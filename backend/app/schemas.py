@@ -6,12 +6,11 @@ class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
 
-    # NEW user profile fields
-    name: str = Field(min_length=2, max_length=150, default="New User")
-    tel: Optional[str] = Field(default=None, max_length=50)
-    address: Optional[str] = Field(default=None, max_length=255)
-    city: Optional[str] = Field(default=None, max_length=120)
-    country: Optional[str] = Field(default=None, max_length=120)
+    name: str = Field(min_length=2, max_length=120)
+    tel: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
 
     # NEW role / org
     role_id: Optional[int] = None           # if None -> backend sets default role (tester)
@@ -175,3 +174,10 @@ class UserUpdateIn(BaseModel):
 
     role_id: Optional[int] = None
     organization_id: Optional[int] = None
+class RequirementPredictIn(BaseModel):
+    text: str = Field(min_length=10)
+
+class RequirementPredictOut(BaseModel):
+    predicted_category: str
+    confidence: float
+    probabilities: dict[str, float]   

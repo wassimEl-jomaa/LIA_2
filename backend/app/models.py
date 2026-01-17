@@ -1,4 +1,4 @@
-from sqlalchemy import String, Text, DateTime, func, Integer, ForeignKey
+from sqlalchemy import Boolean, String, Text, DateTime, func, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -36,9 +36,9 @@ class Organization(Base):
 class Role(Base):
     __tablename__ = "roles"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
-
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     users = relationship("User", back_populates="role")
 
 

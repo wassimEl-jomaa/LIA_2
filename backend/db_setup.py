@@ -40,7 +40,8 @@ async def seed_demo():
                 # Roles (create admin + tester)
         admin_role = (await db.execute(select(Role).where(Role.name == "admin"))).scalars().first()
         if not admin_role:
-            admin_role = Role(name="admin", is_admin=True)
+            admin_role = Role(name="admin")
+            tester_role = Role(name=DEMO_ROLE_NAME)
             db.add(admin_role)
             await db.commit()
             await db.refresh(admin_role)
