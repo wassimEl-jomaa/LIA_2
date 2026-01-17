@@ -13,9 +13,12 @@ from .db import Base, engine, get_db
 from .organizations import router as organizations_router
 from .roles import router as roles_router
 from .users import router as users_router
+from .requirement import router as requirements_router
 from .ml import predict_category
 from .schemas import RequirementPredictIn, RequirementPredictOut
 from .models import RequestLog, User, Project
+from .models import Requirement
+from .schemas import RequirementCreateIn, RequirementUpdateIn, RequirementOut
 from .schemas import TestCasesIn, RiskIn, RegressionIn, SummaryIn, AIOut, HistoryItem, RequestLogOut
 from .ai import call_ai_json, prompt_testcases, prompt_risk, prompt_regression, prompt_summary
 load_dotenv()
@@ -36,6 +39,7 @@ app.include_router(projects_router)  # requires projects.py
 app.include_router(organizations_router)
 app.include_router(roles_router)
 app.include_router(users_router)
+app.include_router(requirements_router) # requires requirement.py
 # DEBUG: show full traceback in Swagger when 500 happens
 @app.exception_handler(Exception)
 async def debug_exception_handler(request: Request, exc: Exception):

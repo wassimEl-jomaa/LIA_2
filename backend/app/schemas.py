@@ -181,3 +181,18 @@ class RequirementPredictOut(BaseModel):
     predicted_category: str
     confidence: float
     probabilities: dict[str, float]   
+class RequirementCreateIn(BaseModel):
+    project_id: int
+    text: str = Field(min_length=10)
+
+class RequirementUpdateIn(BaseModel):
+    text: str = Field(min_length=10)
+
+class RequirementOut(BaseModel):
+    id: int
+    project_id: int
+    requirement_text: str
+    predicted_category: str
+    confidence: float
+    probabilities: Optional[dict[str, float]] = None
+    created_at: str    
