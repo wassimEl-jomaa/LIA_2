@@ -4,7 +4,7 @@ import argparse
 import traceback
 from dotenv import load_dotenv
 from sqlalchemy import select, delete
-from app.models import Role, Organization
+
 from app.db import engine, AsyncSessionLocal, Base
 from app.models import User, Project, Token, Role, Organization
 from app.security import hash_password, new_token, expires_in_days
@@ -34,55 +34,53 @@ async def drop_all_tables():
     print("✅ Tables dropped.")
 
 
+async def _get_or_create_role(db, name: str) -> Role:
+    role = (await db.execute(select(Role).where(Role.name == name))).scalars().first()
+    if role:
+        print(f"ℹ️ Role exists: {role.name} (id={role.id})")
+        return role
+
+    role = Role(name=name)  # IMPORTANT: no is_admin unless your model has it
+    db.add(role)
+    await db.commit()
+    await db.refresh(role)
+    print(f"✅ Created role: {role.name} (id={role.id})")
+    return role
+
+
+async def _get_or_create_org(db, name: str) -> Organization:
+    org = (await db.execute(select(Organization).where(Organization.name == name))).scalars().first()
+    if org:
+        print(f"ℹ️ Organization exists: {org.name} (id={org.id})")
+        return org
+
+    org = Organization(name=name)
+    db.add(org)
+    await db.commit()
+    await db.refresh(org)
+    print(f"✅ Created organization: {org.name} (id={org.id})")
+    return org
+
+
 async def seed_demo():
     print("➡️ Seeding demo data...")
     async with AsyncSessionLocal() as db:
-                # Roles (create admin + tester)
-        admin_role = (await db.execute(select(Role).where(Role.name == "admin"))).scalars().first()
-        if not admin_role:
-            admin_role = Role(name="admin")
-            tester_role = Role(name=DEMO_ROLE_NAME)
-            db.add(admin_role)
-            await db.commit()
-            await db.refresh(admin_role)
-            print(f"✅ Created role: {admin_role.name} (id={admin_role.id})")
-        else:
-            print(f"ℹ️ Role exists: {admin_role.name} (id={admin_role.id})")
+        # 1) Roles
+        admin_role = await _get_or_create_role(db, "admin")
+        tester_role = await _get_or_create_role(db, DEMO_ROLE_NAME)
 
-        tester_role = (await db.execute(select(Role).where(Role.name == DEMO_ROLE_NAME))).scalars().first()
-        if not tester_role:
-            tester_role = Role(name=DEMO_ROLE_NAME, is_admin=False)
-            db.add(tester_role)
-            await db.commit()
-            await db.refresh(tester_role)
-            print(f"✅ Created role: {tester_role.name} (id={tester_role.id})")
-        else:
-            if user.role_id != admin_role.id:
-                user.role_id = admin_role.id
-                await db.commit()
-                print("✅ Updated demo user role to admin")
+        # 2) Organization
+        org = await _get_or_create_org(db, DEMO_ORG_NAME)
 
-
-        # Organization
-        org = (await db.execute(select(Organization).where(Organization.name == DEMO_ORG_NAME))).scalars().first()
-        if not org:
-            org = Organization(name=DEMO_ORG_NAME)
-            db.add(org)
-            await db.commit()
-            await db.refresh(org)
-            print(f"✅ Created organization: {org.name} (id={org.id})")
-        else:
-            print(f"ℹ️ Organization exists: {org.name} (id={org.id})")
-
-        # User
+        # 3) User (ensure required NOT NULL fields are set)
         user = (await db.execute(select(User).where(User.email == DEMO_EMAIL))).scalars().first()
         if not user:
             user = User(
                 email=DEMO_EMAIL,
                 hashed_password=hash_password(DEMO_PASSWORD),
-                name=DEMO_USER_NAME,
-                role_id=admin_role.id,
-                organization_id=org.id,
+                name=DEMO_USER_NAME,          # required (NOT NULL)
+                role_id=admin_role.id,        # pick admin for demo
+                organization_id=org.id,       # if your model has it
                 tel=None,
                 address=None,
                 city=None,
@@ -93,9 +91,30 @@ async def seed_demo():
             await db.refresh(user)
             print(f"✅ Created demo user: {user.email} (id={user.id})")
         else:
-            print(f"ℹ️ Demo user exists: {user.email} (id={user.id})")
+            # keep user in sync (optional)
+            changed = False
 
-        # Token (replace)
+            if getattr(user, "name", None) != DEMO_USER_NAME:
+                user.name = DEMO_USER_NAME
+                changed = True
+
+            if getattr(user, "organization_id", None) != org.id:
+                user.organization_id = org.id
+                changed = True
+
+            # make demo user admin (optional)
+            if getattr(user, "role_id", None) != admin_role.id:
+                user.role_id = admin_role.id
+                changed = True
+
+            if changed:
+                await db.commit()
+                await db.refresh(user)
+                print(f"✅ Updated demo user: {user.email} (id={user.id})")
+            else:
+                print(f"ℹ️ Demo user exists: {user.email} (id={user.id})")
+
+        # 4) Token (replace old token)
         await db.execute(delete(Token).where(Token.user_id == user.id))
         tok = new_token()
         exp = expires_in_days(7)
@@ -104,10 +123,13 @@ async def seed_demo():
         print(f"✅ Demo token created (expires {exp.isoformat()})")
         print(f"🔑 TOKEN: {tok}")
 
-        # Project
+        # 5) Project
         project = (
             await db.execute(
-                select(Project).where(Project.name == DEMO_PROJECT_NAME, Project.owner_user_id == user.id)
+                select(Project).where(
+                    Project.name == DEMO_PROJECT_NAME,
+                    Project.owner_user_id == user.id
+                )
             )
         ).scalars().first()
 
@@ -149,6 +171,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-

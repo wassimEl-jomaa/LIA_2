@@ -3,13 +3,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
+from .permissions import ensure_project_access  # ✅ access for owner + members
 from .db import get_db
-from .models import Requirement, User, Project
+from .models import Requirement, User
 from .schemas import RequirementCreateIn, RequirementUpdateIn, RequirementOut
 from .auth import get_current_user
 
-# Optional ML prediction (if you have it)
-# from .ml import predict_category
+
 
 router = APIRouter(prefix="/api/requirements", tags=["requirements"])
 
@@ -33,14 +33,6 @@ def _req_to_out(r: Requirement) -> RequirementOut:
     )
 
 
-async def ensure_project_owner(db: AsyncSession, project_id: int, user_id: int) -> Project:
-    stmt = select(Project).where(Project.id == project_id, Project.owner_user_id == user_id)
-    project = (await db.execute(stmt)).scalars().first()
-    if not project:
-        raise HTTPException(status_code=403, detail="Project not found or not owned by user")
-    return project
-
-
 @router.post("", response_model=RequirementOut)
 async def create_requirement(
     payload: RequirementCreateIn,
@@ -48,21 +40,21 @@ async def create_requirement(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    await ensure_project_owner(db, payload.project_id, user.id)
+    # ✅ Allow owner + project members to create (editor check)
+    await ensure_project_access(db, payload.project_id, user.id, allow_view=False)
 
     predicted_category = "Unknown"
     confidence = 0.0
     probs = None
 
-    # If you have ML prediction, uncomment these lines:
-    # if predict:
-    #     predicted_category, confidence, probs = predict_category(payload.text)
+    if predict:
+        predicted_category, confidence, probs = predict_category(payload.text)
 
     req = Requirement(
         project_id=payload.project_id,
         requirement_text=payload.text,
         predicted_category=predicted_category,
-        confidence=float(confidence),
+        confidence=float(confidence or 0.0),
         probabilities_json=json.dumps(probs, ensure_ascii=False) if probs else None,
     )
 
@@ -82,7 +74,8 @@ async def get_requirement(
     if not req:
         raise HTTPException(status_code=404, detail="Requirement not found")
 
-    await ensure_project_owner(db, req.project_id, user.id)
+    # ✅ Allow owner + members to view
+    await ensure_project_access(db, req.project_id, user.id, allow_view=True)
     return _req_to_out(req)
 
 
@@ -93,7 +86,8 @@ async def list_requirements(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    await ensure_project_owner(db, project_id, user.id)
+    # ✅ Allow owner + members to view
+    await ensure_project_access(db, project_id, user.id, allow_view=True)
 
     stmt = (
         select(Requirement)
@@ -117,16 +111,16 @@ async def update_requirement(
     if not req:
         raise HTTPException(status_code=404, detail="Requirement not found")
 
-    await ensure_project_owner(db, req.project_id, user.id)
+    # ✅ Allow owner + members to edit (editor check)
+    await ensure_project_access(db, req.project_id, user.id, allow_view=False)
 
     req.requirement_text = payload.text
 
-    # If you have ML prediction, uncomment:
-    # if predict:
-    #     pred, conf, probs = predict_category(payload.text)
-    #     req.predicted_category = pred
-    #     req.confidence = float(conf)
-    #     req.probabilities_json = json.dumps(probs, ensure_ascii=False) if probs else None
+    if predict:
+        pred, conf, probs = predict_category(payload.text)
+        req.predicted_category = pred
+        req.confidence = float(conf or 0.0)
+        req.probabilities_json = json.dumps(probs, ensure_ascii=False) if probs else None
 
     await db.commit()
     await db.refresh(req)
@@ -143,7 +137,8 @@ async def delete_requirement(
     if not req:
         raise HTTPException(status_code=404, detail="Requirement not found")
 
-    await ensure_project_owner(db, req.project_id, user.id)
+    # ✅ Allow owner + members to delete (editor check)
+    await ensure_project_access(db, req.project_id, user.id, allow_view=False)
 
     await db.delete(req)
     await db.commit()

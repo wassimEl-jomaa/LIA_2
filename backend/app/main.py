@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from dotenv import load_dotenv
@@ -14,6 +15,8 @@ from .organizations import router as organizations_router
 from .roles import router as roles_router
 from .users import router as users_router
 from .requirement import router as requirements_router
+from .groups import router as groups_router
+from .project_sharing import router as project_sharing_router
 from .ml import predict_category
 from .schemas import RequirementPredictIn, RequirementPredictOut
 from .models import RequestLog, User, Project
@@ -40,6 +43,8 @@ app.include_router(organizations_router)
 app.include_router(roles_router)
 app.include_router(users_router)
 app.include_router(requirements_router) # requires requirement.py
+app.include_router(groups_router)
+app.include_router(project_sharing_router)
 # DEBUG: show full traceback in Swagger when 500 happens
 @app.exception_handler(Exception)
 async def debug_exception_handler(request: Request, exc: Exception):

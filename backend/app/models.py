@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, String, Text, DateTime, func, Integer, ForeignKey
+from sqlalchemy import Boolean, String, Text, DateTime, UniqueConstraint, func, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -28,7 +28,88 @@ class Organization(Base):
 
     users = relationship("User", back_populates="organization", cascade="all, delete")
     projects = relationship("Project", back_populates="organization", cascade="all, delete")
+    groups = relationship("Group", back_populates="organization", cascade="all, delete-orphan")
 
+class Group(Base):
+    __tablename__ = "groups"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_groups_org_name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+
+    created_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
+    organization = relationship("Organization", back_populates="groups")
+# =========================
+# GROUP MEMBERS
+# many-to-many users<->groups
+# =========================
+class GroupMember(Base):
+    __tablename__ = "group_members"
+    __table_args__ = (
+        UniqueConstraint("group_id", "user_id", name="uq_group_members_group_user"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_id: Mapped[int] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    group = relationship("Group", back_populates="members")
+    user = relationship("User", back_populates="group_memberships")
+# =========================
+# PROJECT MEMBERS   
+# many-to-many users<->projects
+# =========================
+class ProjectMember(Base):
+    __tablename__ = "project_members"
+    __table_args__ = (
+        UniqueConstraint("project_id", "user_id", name="uq_project_members_project_user"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False
+    )
+
+    # permissions on project
+    access_level: Mapped[str] = mapped_column(String(20), default="viewer", nullable=False)
+    # access_level examples: viewer | editor
+
+    created_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    project = relationship("Project", back_populates="members")
+    user = relationship("User", back_populates="project_memberships")
 
 # =========================
 # ROLES
@@ -84,6 +165,9 @@ class User(Base):
 
     projects = relationship("Project", back_populates="owner", cascade="all, delete")
     token = relationship("Token", back_populates="user", uselist=False, cascade="all, delete")
+    group_memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
+    project_memberships = relationship("ProjectMember", back_populates="user", cascade="all, delete-orphan")
+
 # =========================
 # REQUIREMENTS
 # =========================
@@ -176,6 +260,7 @@ class Project(Base):
     organization = relationship("Organization", back_populates="projects")
     logs = relationship("RequestLog", back_populates="project", cascade="all, delete")
     requirements = relationship("Requirement", back_populates="project", cascade="all, delete")
+    members = relationship("ProjectMember", back_populates="project", cascade="all, delete-orphan")
 
 # =========================
 # REQUEST LOGS (AI HISTORY)

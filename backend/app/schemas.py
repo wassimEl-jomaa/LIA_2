@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, EmailStr
-from typing import Optional, Any
+from typing import Optional, Any, List
 
 # ---------- AUTH ----------
 class RegisterIn(BaseModel):
@@ -196,3 +196,32 @@ class RequirementOut(BaseModel):
     confidence: float
     probabilities: Optional[dict[str, float]] = None
     created_at: str    
+
+# ---------- GROUPS & PROJECT MEMBERS ----------
+class GroupCreateIn(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+
+class GroupOut(BaseModel):
+    id: int
+    organization_id: int
+    name: str
+    created_at: str
+# ---------- GROUP MEMBERS & PROJECT MEMBERS ----------
+class GroupMemberAddIn(BaseModel):
+    user_id: int
+
+class ProjectMemberAddByEmailIn(BaseModel):
+    email: EmailStr
+    access_level: str = "viewer"  # viewer|editor
+
+class ProjectMemberOut(BaseModel):
+    id: int
+    project_id: int
+    user_id: int
+    access_level: str
+    created_at: str
+
+class ProjectSharesOut(BaseModel):
+    project_id: int
+    users: List[ProjectMemberOut]
+    groups: List[GroupOut]  # if later you add project_group table, include it here
