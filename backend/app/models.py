@@ -29,7 +29,43 @@ class Organization(Base):
     users = relationship("User", back_populates="organization", cascade="all, delete")
     projects = relationship("Project", back_populates="organization", cascade="all, delete")
     groups = relationship("Group", back_populates="organization", cascade="all, delete-orphan")
+# =========================
+# PROJECTS
+# =========================
+class Project(Base):
+    __tablename__ = "projects"
 
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    name: Mapped[str] = mapped_column(String(150), index=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id"),
+        nullable=True,
+        index=True
+    )
+
+    owner_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    owner = relationship("User", back_populates="projects")
+    organization = relationship("Organization", back_populates="projects")
+
+    logs = relationship("RequestLog", back_populates="project", cascade="all, delete")
+    requirements = relationship("Requirement", back_populates="project", cascade="all, delete")
+
+    members = relationship("ProjectMember", back_populates="project", cascade="all, delete-orphan")
+    group_members = relationship("ProjectGroupMember", back_populates="project", cascade="all, delete-orphan")
 class Group(Base):
     __tablename__ = "groups"
     __table_args__ = (
@@ -50,10 +86,6 @@ class Group(Base):
 
     members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
     organization = relationship("Organization", back_populates="groups")
-# =========================
-# GROUP MEMBERS
-# many-to-many users<->groups
-# =========================
 class GroupMember(Base):
     __tablename__ = "group_members"
     __table_args__ = (
@@ -61,23 +93,12 @@ class GroupMember(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    group_id: Mapped[int] = mapped_column(
-        ForeignKey("groups.id", ondelete="CASCADE"),
-        index=True,
-        nullable=False
-    )
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        index=True,
-        nullable=False
-    )
-
-    created_at: Mapped[str] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
 
     group = relationship("Group", back_populates="members")
-    user = relationship("User", back_populates="group_memberships")
+    user = relationship("User", back_populates="group_memberships")    
+
 # =========================
 # PROJECT MEMBERS   
 # many-to-many users<->projects
@@ -89,29 +110,33 @@ class ProjectMember(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    project_id: Mapped[int] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE"),
-        index=True,
-        nullable=False
-    )
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        index=True,
-        nullable=False
-    )
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
 
-    # permissions on project
     access_level: Mapped[str] = mapped_column(String(20), default="viewer", nullable=False)
-    # access_level examples: viewer | editor
-
-    created_at: Mapped[str] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     project = relationship("Project", back_populates="members")
     user = relationship("User", back_populates="project_memberships")
-
 # =========================
+# PROJECT GROUP MEMBERS 
+# many-to-many groups<->projects
+# =========================
+class ProjectGroupMember(Base):
+    __tablename__ = "project_group_members"
+    __table_args__ = (
+        UniqueConstraint("project_id", "group_id", name="uq_project_group_members_project_group"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True, nullable=False)
+
+    access_level: Mapped[str] = mapped_column(String(20), default="viewer", nullable=False)
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    project = relationship("Project", back_populates="group_members")
+    group = relationship("Group")
 # ROLES
 # =========================
 class Role(Base):
@@ -165,6 +190,7 @@ class User(Base):
 
     projects = relationship("Project", back_populates="owner", cascade="all, delete")
     token = relationship("Token", back_populates="user", uselist=False, cascade="all, delete")
+
     group_memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
     project_memberships = relationship("ProjectMember", back_populates="user", cascade="all, delete-orphan")
 
@@ -227,40 +253,8 @@ class Token(Base):
     user = relationship("User", back_populates="token")
 
 
-# =========================
-# PROJECTS
-# =========================
-class Project(Base):
-    __tablename__ = "projects"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
-    name: Mapped[str] = mapped_column(String(150), index=True, nullable=False)
-    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    organization_id: Mapped[int | None] = mapped_column(
-        ForeignKey("organizations.id"),
-        nullable=True,
-        index=True
-    )
-
-    owner_user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
-    )
-
-    created_at: Mapped[str] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False
-    )
-
-    owner = relationship("User", back_populates="projects")
-    organization = relationship("Organization", back_populates="projects")
-    logs = relationship("RequestLog", back_populates="project", cascade="all, delete")
-    requirements = relationship("Requirement", back_populates="project", cascade="all, delete")
-    members = relationship("ProjectMember", back_populates="project", cascade="all, delete-orphan")
 
 # =========================
 # REQUEST LOGS (AI HISTORY)

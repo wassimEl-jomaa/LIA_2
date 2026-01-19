@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
-
+from sqlalchemy.orm import selectinload
 from .db import get_db
 from .models import User, Token
 from .schemas import RegisterIn, LoginIn, TokenOut, UserMeOut
@@ -19,17 +19,12 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
     creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> User:
-    """
-    Token auth: Authorization: Bearer <token>
-    Creates Swagger 'Authorize' button automatically.
-    """
     if creds is None or not creds.credentials:
         _unauthorized("Missing or invalid Authorization header")
 
     token_value = creds.credentials.strip()
 
-    stmt = select(Token).where(Token.token == token_value)
-    token_row = (await db.execute(stmt)).scalars().first()
+    token_row = (await db.execute(select(Token).where(Token.token == token_value))).scalars().first()
     if not token_row:
         _unauthorized("Token not found")
 
@@ -38,12 +33,17 @@ async def get_current_user(
         await db.commit()
         _unauthorized("Token expired")
 
-    user_stmt = select(User).where(User.id == token_row.user_id)
+    user_stmt = (
+        select(User)
+        .options(selectinload(User.role))  # ✅ THIS fixes MissingGreenlet
+        .where(User.id == token_row.user_id)
+    )
     user = (await db.execute(user_stmt)).scalars().first()
     if not user:
         _unauthorized("User not found")
 
     return user
+
 
 
 @router.post("/register", response_model=TokenOut)

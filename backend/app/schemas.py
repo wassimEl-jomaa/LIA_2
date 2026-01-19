@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, EmailStr
-from typing import Optional, Any, List
+from typing import Optional, Any, List, Literal
 
 # ---------- AUTH ----------
 class RegisterIn(BaseModel):
@@ -203,25 +203,55 @@ class GroupCreateIn(BaseModel):
 
 class GroupOut(BaseModel):
     id: int
-    organization_id: int
     name: str
-    created_at: str
 # ---------- GROUP MEMBERS & PROJECT MEMBERS ----------
 class GroupMemberAddIn(BaseModel):
     user_id: int
+class MemberUserOut(BaseModel):
+    id: int
+    email: EmailStr
+    name: Optional[str] = None
+    role_name: Optional[str] = None
+    is_admin: bool = False
+    groups: List[GroupOut] = []
+
+    class Config:
+        from_attributes = True
 
 class ProjectMemberAddByEmailIn(BaseModel):
     email: EmailStr
     access_level: str = "viewer"  # viewer|editor
+class AddProjectMemberIn(BaseModel):
+    email: EmailStr
+    access_level: Literal["viewer", "editor"] = "viewer"    
+class ProjectMemberUpdateIn(BaseModel):
+    access_level: str  # viewer | editor
 
 class ProjectMemberOut(BaseModel):
     id: int
     project_id: int
-    user_id: int
-    access_level: str
-    created_at: str
+    access_level: str  # viewer | editor
+
+    # either user or group
+    user_id: Optional[int] = None
+    group_id: Optional[int] = None
+
+    # enriched fields
+    user: Optional[MemberUserOut] = None
+    group: Optional[GroupOut] = None
+
+    # badges
+    is_owner: bool = False
+    is_admin: bool = False
+
+    class Config:
+        from_attributes = True
 
 class ProjectSharesOut(BaseModel):
     project_id: int
     users: List[ProjectMemberOut]
     groups: List[GroupOut]  # if later you add project_group table, include it here
+
+class ProjectMemberAddByEmailIn(BaseModel):
+    email: str  # ← This is the field name!
+    access_level: str

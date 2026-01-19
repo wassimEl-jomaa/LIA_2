@@ -22,7 +22,7 @@ async def list_roles(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    require_admin(user)
+    # Allow all authenticated users to view roles (needed for registration, etc.)
     rows = (await db.execute(select(Role).order_by(Role.id))).scalars().all()
     return [RoleOut(id=r.id, name=r.name, is_admin=r.is_admin) for r in rows]
 

@@ -34,17 +34,24 @@ async def drop_all_tables():
     print("✅ Tables dropped.")
 
 
-async def _get_or_create_role(db, name: str) -> Role:
+async def _get_or_create_role(db, name: str, is_admin: bool = False) -> Role:
     role = (await db.execute(select(Role).where(Role.name == name))).scalars().first()
     if role:
-        print(f"ℹ️ Role exists: {role.name} (id={role.id})")
+        # Update is_admin flag if it changed
+        if role.is_admin != is_admin:
+            role.is_admin = is_admin
+            await db.commit()
+            await db.refresh(role)
+            print(f"✅ Updated role: {role.name} (id={role.id}, is_admin={role.is_admin})")
+        else:
+            print(f"ℹ️ Role exists: {role.name} (id={role.id}, is_admin={role.is_admin})")
         return role
 
-    role = Role(name=name)  # IMPORTANT: no is_admin unless your model has it
+    role = Role(name=name, is_admin=is_admin)
     db.add(role)
     await db.commit()
     await db.refresh(role)
-    print(f"✅ Created role: {role.name} (id={role.id})")
+    print(f"✅ Created role: {role.name} (id={role.id}, is_admin={role.is_admin})")
     return role
 
 
@@ -66,8 +73,8 @@ async def seed_demo():
     print("➡️ Seeding demo data...")
     async with AsyncSessionLocal() as db:
         # 1) Roles
-        admin_role = await _get_or_create_role(db, "admin")
-        tester_role = await _get_or_create_role(db, DEMO_ROLE_NAME)
+        admin_role = await _get_or_create_role(db, "admin", is_admin=True)
+        tester_role = await _get_or_create_role(db, DEMO_ROLE_NAME, is_admin=False)
 
         # 2) Organization
         org = await _get_or_create_org(db, DEMO_ORG_NAME)

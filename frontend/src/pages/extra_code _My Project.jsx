@@ -27,49 +27,50 @@ function safeLogout(navigate) {
 export default function MyProjects() {
   const navigate = useNavigate();
   const token = useMemo(() => getToken(), []);
-
-  // user
-  const [userName, setUserName] = useState("");
-  const [userEmail, setUserEmail] = useState("");
-
-  // projects
+  const [memberUsers, setMemberUsers] = useState({});
   const [projects, setProjects] = useState([]);
   const [projectName, setProjectName] = useState("");
+
   const [activeProjectId, setActiveProjectId] = useState(
     Number(localStorage.getItem("active_project_id")) || null
   );
 
-  // ui
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+
+  /** UX improvements */
   const [query, setQuery] = useState("");
-
-  // manage modal
-  const [manageOpen, setManageOpen] = useState(false);
-  const [manageProject, setManageProject] = useState(null);
-  const [manageLoading, setManageLoading] = useState(false);
-  const [manageError, setManageError] = useState("");
-
-  const [members, setMembers] = useState([]);
-  const [groups, setGroups] = useState([]);
-  const [memberUsers, setMemberUsers] = useState({}); // map user_id -> user object
-
-  // add user
-  const [shareUserEmail, setShareUserEmail] = useState("");
-  const [shareAccessLevel, setShareAccessLevel] = useState("viewer");
-
-  // add group
-  const [selectedGroupId, setSelectedGroupId] = useState("");
-  const [groupAccessLevel, setGroupAccessLevel] = useState("viewer");
-  // user groups cache
-  const [userGroups, setUserGroups] = useState({}); // { [userId]: [{id,name}, ...] }
-  // create group
-  const [newGroupName, setNewGroupName] = useState("");
- 
   const filteredProjects = projects.filter((p) =>
     (p.name || "").toLowerCase().includes(query.toLowerCase())
   );
+
+  /** ---------- Share modal state (backend-based) ---------- */
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareProject, setShareProject] = useState(null);
+
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState("");
+
+  // members of selected project (from backend)
+  const [members, setMembers] = useState([]); // [{id, user_id, user_email?, group_id?, group_name?, access_level}]
+
+  // groups list (from backend)
+  const [groups, setGroups] = useState([]); // [{id, name}]
+
+  // add user to project
+  const [shareUserEmail, setShareUserEmail] = useState("");
+  const [shareAccessLevel, setShareAccessLevel] = useState("viewer"); // viewer | editor
+
+  // add group to project
+  const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [groupAccessLevel, setGroupAccessLevel] = useState("viewer");
+
+  // create group
+  const [newGroupName, setNewGroupName] = useState("");
 
   /** ---------- Authorized fetch wrapper ---------- */
   async function authFetch(url, options = {}) {
@@ -91,7 +92,6 @@ export default function MyProjects() {
       safeLogout(navigate);
       throw new Error("Unauthorized. Please login again.");
     }
-
     return res;
   }
 
@@ -101,7 +101,6 @@ export default function MyProjects() {
     if (token && isTokenExpired()) safeLogout(navigate);
   }, [token, navigate]);
 
-  /** ---------- Load me + projects ---------- */
   async function fetchMe() {
     try {
       const res = await authFetch(`${API_BASE}/auth/me`);
@@ -126,11 +125,10 @@ export default function MyProjects() {
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || "Failed to load projects");
 
-      const list = Array.isArray(data) ? data : [];
-      setProjects(list);
+      setProjects(Array.isArray(data) ? data : []);
 
-      if (!activeProjectId && list.length > 0) {
-        const firstId = list[0].id;
+      if (!activeProjectId && Array.isArray(data) && data.length > 0) {
+        const firstId = data[0].id;
         setActiveProjectId(firstId);
         localStorage.setItem("active_project_id", String(firstId));
       }
@@ -147,7 +145,6 @@ export default function MyProjects() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** ---------- Create project ---------- */
   async function createProject(e) {
     e.preventDefault();
     if (!projectName.trim()) return;
@@ -171,7 +168,6 @@ export default function MyProjects() {
       setActiveProjectId(data.id);
       localStorage.setItem("active_project_id", String(data.id));
 
-      // go to selected project
       navigate(`/projects/${data.id}`);
     } catch (err) {
       setError(err.message || "Something went wrong");
@@ -180,8 +176,7 @@ export default function MyProjects() {
     }
   }
 
-  /** ---------- Open project ---------- */
-  function openProject(id) {
+  function selectProject(id) {
     setActiveProjectId(id);
     localStorage.setItem("active_project_id", String(id));
     navigate(`/projects/${id}`);
@@ -189,7 +184,7 @@ export default function MyProjects() {
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
-  /** ---------- Manage/Share (backend) ---------- */
+  /** ---------- Share modal functions (backend) ---------- */
   async function loadGroups() {
     const res = await authFetch(`${API_BASE}/api/groups`);
     const data = await res.json().catch(() => []);
@@ -199,100 +194,92 @@ export default function MyProjects() {
 
   async function loadMembers(projectId) {
   const res = await authFetch(`${API_BASE}/api/projects/${projectId}/members`);
-  const data = await res.json().catch(() => []);
-  if (!res.ok) throw new Error(data?.detail || "Failed to load members");
 
-  const arr = Array.isArray(data) ? data : [];
-  setMembers(arr);
+  // Read response safely (might not be JSON on errors)
+  let data = [];
+  try {
+    data = await res.json();
+  } catch {
+    data = [];
+  }
 
-  const userIds = [...new Set(arr.map((m) => m.user_id).filter(Boolean))];
+  if (!res.ok) {
+    const msg = data?.detail || "Failed to load members";
+    throw new Error(msg);
+  }
+
+  const list = Array.isArray(data) ? data : [];
+  setMembers(list);
+
+  // Collect user ids that we actually need to fetch
+  // (skip if backend already returns user_email / group_name)
+  const userIds = [
+    ...new Set(
+      list
+        .filter((m) => m.user_id && !m.user_email) // only fetch if we don't already have email
+        .map((m) => m.user_id)
+    ),
+  ];
+
   if (userIds.length === 0) {
     setMemberUsers({});
-    setUserGroups({});
     return;
   }
 
-  const usersMap = {};
-  const groupsMap = {};
-
-  for (const userId of userIds) {
-    try {
-      const userRes = await authFetch(`${API_BASE}/api/users/${userId}`);
-      const userData = await userRes.json().catch(() => null);
-
-      if (userRes.ok && userData) {
-        usersMap[userId] = userData;
-
-        // ✅ if backend returns groups
-        if (Array.isArray(userData.groups)) {
-          groupsMap[userId] = userData.groups;
-        } else {
-          groupsMap[userId] = [];
-        }
+  // Fetch users in parallel
+  const results = await Promise.all(
+    userIds.map(async (id) => {
+      try {
+        const userRes = await authFetch(`${API_BASE}/api/users/${id}`);
+        const userData = await userRes.json().catch(() => null);
+        if (!userRes.ok || !userData) return null;
+        return [id, userData];
+      } catch (e) {
+        console.error(`Failed to fetch user ${id}`);
+        return null;
       }
-    } catch {
-      groupsMap[userId] = [];
-    }
+    })
+  );
+
+  // Build map { userId: userData }
+  const usersMap = {};
+  for (const item of results) {
+    if (!item) continue;
+    const [id, userData] = item;
+    usersMap[id] = userData;
   }
 
   setMemberUsers(usersMap);
-  setUserGroups(groupsMap);
 }
 
-
-  function memberLabel(m) {
-  // User member
-  if (m.user_id) {
-    const u = memberUsers[m.user_id];
-    const name = u?.name || u?.email || m.user_email || `User ID: ${m.user_id}`;
-
-    const gs = userGroups[m.user_id] || [];
-    const groupText =
-      gs.length > 0 ? gs.map((g) => g.name).join(", ") : "—";
-
-    return `${name} • Groups: ${groupText}`;
-  }
-
-  // Group member (project shared with a group)
-  if (m.group_name) return `Group: ${m.group_name}`;
-  if (m.group_id) return `Group ID: ${m.group_id}`;
-
-  return "Member";
-}
-
-
-  async function openManage(project) {
-    setManageProject(project);
-    setManageOpen(true);
-    setManageError("");
+  async function openShareModal(project) {
+    setShareProject(project);
+    setShareOpen(true);
+    setShareError("");
     setMembers([]);
     setGroups([]);
-    setMemberUsers({});
-
     setShareUserEmail("");
     setShareAccessLevel("viewer");
-
     setSelectedGroupId("");
     setGroupAccessLevel("viewer");
-
     setNewGroupName("");
 
-    setManageLoading(true);
+    setShareLoading(true);
     try {
       await Promise.all([loadGroups(), loadMembers(project.id)]);
     } catch (e) {
-      setManageError(e?.message || "Failed to load project access");
+      setShareError(e?.message || "Failed to load sharing data");
     } finally {
-      setManageLoading(false);
+      setShareLoading(false);
     }
   }
 
   async function createGroup() {
-    setManageError("");
+    setShareError("");
     const name = newGroupName.trim();
     if (!name) return;
 
-    setManageLoading(true);
+    setShareLoading(true);
     try {
       const res = await authFetch(`${API_BASE}/api/groups`, {
         method: "POST",
@@ -305,140 +292,171 @@ export default function MyProjects() {
 
       setNewGroupName("");
       await loadGroups();
+      // Auto-select new group
       if (data?.id) setSelectedGroupId(String(data.id));
     } catch (e) {
-      setManageError(e?.message || "Failed to create group");
+      setShareError(e?.message || "Failed to create group");
     } finally {
-      setManageLoading(false);
+      setShareLoading(false);
     }
   }
 
-  async function addUserMember() {
-    if (!manageProject) return;
-    const email = shareUserEmail.trim();
-    if (!email) {
-      setManageError("Email is required");
+ async function addUserMember() {
+  if (!shareUserEmail.trim()) {
+    setShareError("Email is required");
+    return;
+  }
+
+  setShareLoading(true);
+  setShareError("");
+
+  try {
+    const res = await authFetch(
+      `${API_BASE}/api/projects/${shareProject.id}/members`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: shareUserEmail.trim().toLowerCase(),
+          access_level: shareAccessLevel,
+        }),
+      }
+    );
+
+    const data = await res.json();
+    if (!res.ok) {
+      const errorMsg = 
+        typeof data.detail === "string" 
+          ? data.detail 
+          : data.detail?.[0]?.msg || "Failed to add member";
+      setShareError(errorMsg);
       return;
     }
 
-    setManageLoading(true);
-    setManageError("");
+    setMembers([...members, data]);
+    setShareUserEmail("");
+    setShareError("");
+  } catch (err) {
+    setShareError(err.message || "Failed to add member");
+  } finally {
+    setShareLoading(false);
+  }
+}
 
-    try {
-      const res = await authFetch(
-        `${API_BASE}/api/projects/${manageProject.id}/members`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, access_level: shareAccessLevel }),
-        }
-      );
-
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        const msg =
-          typeof data?.detail === "string"
-            ? data.detail
-            : data?.detail?.[0]?.msg || "Failed to add member";
-        throw new Error(msg);
-      }
-
-      setShareUserEmail("");
-      await loadMembers(manageProject.id);
-    } catch (e) {
-      setManageError(e?.message || "Failed to add member");
-    } finally {
-      setManageLoading(false);
-    }
+// ← ADD THIS FUNCTION
+async function addGroupMember() {
+  if (!selectedGroupId) {
+    setShareError("Please select a group");
+    return;
   }
 
-  async function addGroupMember() {
-    if (!manageProject) return;
-    if (!selectedGroupId) {
-      setManageError("Please select a group");
+  setShareLoading(true);
+  setShareError("");
+
+  try {
+    const res = await authFetch(
+      `${API_BASE}/api/projects/${shareProject.id}/groups`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          group_id: parseInt(selectedGroupId),
+          access_level: groupAccessLevel,
+        }),
+      }
+    );
+
+    const data = await res.json();
+    if (!res.ok) {
+      const errorMsg = 
+        typeof data.detail === "string" 
+          ? data.detail 
+          : data.detail?.[0]?.msg || "Failed to add group";
+      setShareError(errorMsg);
       return;
     }
 
-    setManageLoading(true);
-    setManageError("");
-
-    try {
-      const res = await authFetch(
-        `${API_BASE}/api/projects/${manageProject.id}/groups`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            group_id: parseInt(selectedGroupId, 10),
-            access_level: groupAccessLevel,
-          }),
-        }
-      );
-
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        const msg =
-          typeof data?.detail === "string"
-            ? data.detail
-            : data?.detail?.[0]?.msg || "Failed to add group";
-        throw new Error(msg);
-      }
-
-      setSelectedGroupId("");
-      await loadMembers(manageProject.id);
-    } catch (e) {
-      setManageError(e?.message || "Failed to add group");
-    } finally {
-      setManageLoading(false);
-    }
+    setMembers([...members, data]);
+    setSelectedGroupId("");
+    setShareError("");
+  } catch (err) {
+    setShareError(err.message || "Failed to add group");
+  } finally {
+    setShareLoading(false);
   }
+}
 
   async function removeMember(memberId) {
-    if (!manageProject) return;
+    if (!shareProject) return;
+    setShareError("");
 
-    setManageLoading(true);
-    setManageError("");
+    setShareLoading(true);
     try {
       const res = await authFetch(
-        `${API_BASE}/api/projects/${manageProject.id}/members/${memberId}`,
+        `${API_BASE}/api/projects/${shareProject.id}/members/${memberId}`,
         { method: "DELETE" }
       );
 
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || "Failed to remove member");
 
-      await loadMembers(manageProject.id);
+      await loadMembers(shareProject.id);
     } catch (e) {
-      setManageError(e?.message || "Failed to remove member");
+      setShareError(e?.message || "Failed to remove member");
     } finally {
-      setManageLoading(false);
+      setShareLoading(false);
     }
   }
+
+  function memberLabel(m) {
+  // If we have user data fetched, show name + email
+  if (m.user_id && memberUsers[m.user_id]) {
+    const user = memberUsers[m.user_id];
+    return `${user.name || user.email}`;
+  }
+  // Fallback to email if backend returned it
+  if (m.user_email) return `${m.user_email}`;
+  // Groups
+  if (m.group_name) return `Group: ${m.group_name}`;
+  // Fallbacks for IDs
+  if (m.user_id) return `User ID: ${m.user_id}`;
+  if (m.group_id) return `Group ID: ${m.group_id}`;
+  return "Member";
+}
 
   return (
     <div className="min-h-[calc(100vh-56px)] bg-gradient-to-b from-slate-50 to-white px-4 py-8">
       <div className="mx-auto max-w-6xl space-y-6">
-        {/* Top bar */}
+        {/* Header */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
-              <h1 className="text-2xl font-bold text-slate-900 truncate">
-                My Projects
-              </h1>
-              <p className="text-sm text-slate-600 mt-1">
-                Create and manage projects. Share access with users and groups.
-              </p>
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center">
+                  <span className="text-blue-700 font-bold">P</span>
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-2xl font-bold text-slate-900 truncate">
+                    My Projects
+                  </h1>
+                  <p className="text-sm text-slate-600 mt-1">
+                    Create a project, select it, and start generating test
+                    assets with AI.
+                  </p>
+                </div>
+              </div>
 
               <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-sm">
                 <span className="font-semibold text-slate-800">
                   {userName ? `Hi, ${userName}` : "Hi"}
                 </span>
-                {userEmail && <span className="text-slate-600">• {userEmail}</span>}
+                {userEmail && (
+                  <span className="text-slate-600">• {userEmail}</span>
+                )}
               </div>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2">
-              {/* Refresh */}
               <button
                 onClick={fetchProjects}
                 className="rounded-lg bg-white px-4 py-2 font-semibold text-slate-800 border border-slate-200 hover:bg-slate-50"
@@ -446,39 +464,44 @@ export default function MyProjects() {
                 Refresh
               </button>
 
-              {/* Logout */}
               <button
                 onClick={() => safeLogout(navigate)}
                 className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-black"
+                title="Log out (clears token)"
               >
                 Logout
               </button>
             </div>
           </div>
 
-          {/* Summary cards */}
           <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-xs font-semibold text-slate-500">Active Project</div>
+              <div className="text-xs font-semibold text-slate-500">
+                Active Project
+              </div>
               <div className="mt-1 font-bold text-slate-900 truncate">
                 {activeProject ? activeProject.name : "None selected"}
               </div>
               <div className="mt-1 text-xs text-slate-600">
-                project_id: <span className="font-semibold">{activeProjectId ?? "—"}</span>
+                project_id:{" "}
+                <span className="font-semibold">{activeProjectId ?? "—"}</span>
               </div>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-xs font-semibold text-slate-500">Create new project</div>
+              <div className="text-xs font-semibold text-slate-500">Security</div>
               <div className="mt-1 text-sm text-slate-700">
-                Use clear names like <span className="font-semibold">Customer A – QA</span>.
+                Token expiry is checked locally. If session expires you’ll be
+                logged out automatically.
               </div>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-xs font-semibold text-slate-500">Manage your project</div>
+              <div className="text-xs font-semibold text-slate-500">
+                Sharing
+              </div>
               <div className="mt-1 text-sm text-slate-700">
-                Add users/groups and control viewer/editor access.
+                Share projects with users and groups (backend).
               </div>
             </div>
           </div>
@@ -490,21 +513,22 @@ export default function MyProjects() {
           </div>
         )}
 
-        {/* Main grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Create */}
+          {/* Create project */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 lg:col-span-1">
-            <h2 className="text-lg font-bold text-slate-900">Create new project</h2>
+            <h2 className="text-lg font-bold text-slate-900">Create Project</h2>
+            <p className="text-sm text-slate-600 mt-1">
+              Keep customer systems separated and track AI history per project.
+            </p>
 
             <form onSubmit={createProject} className="mt-4 space-y-3">
               <input
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                placeholder="New project name…"
+                placeholder="New project name (e.g. Customer A - QA)"
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
               />
 
-              {/* Create */}
               <button
                 type="submit"
                 disabled={creating || !projectName.trim()}
@@ -515,7 +539,9 @@ export default function MyProjects() {
             </form>
 
             <div className="mt-5">
-              <label className="text-xs font-semibold text-slate-500">Search projects</label>
+              <label className="text-xs font-semibold text-slate-500">
+                Search projects
+              </label>
               <input
                 className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
                 placeholder="Type to filter…"
@@ -523,26 +549,39 @@ export default function MyProjects() {
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
+
+            <div className="mt-4 text-xs text-slate-500">
+              Active project is stored in your browser (localStorage).
+            </div>
           </div>
 
-          {/* List */}
+          {/* Projects list */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 lg:col-span-2 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <div className="text-sm font-semibold text-slate-800">Projects</div>
+                <div className="text-sm font-semibold text-slate-800">
+                  Projects
+                </div>
                 <div className="text-xs text-slate-500">
-                  Buttons: Manage your project • Share • Open
+                  Select a project to open details. Use Share to assign users/groups.
                 </div>
               </div>
               <div className="text-xs text-slate-500">
-                Total: <span className="font-semibold">{filteredProjects.length}</span>
+                Showing:{" "}
+                <span className="font-semibold">{filteredProjects.length}</span>
+                {" / "}
+                <span className="font-semibold">{projects.length}</span>
               </div>
             </div>
 
             {loading ? (
-              <div className="p-6 text-sm text-slate-500">Loading…</div>
+              <div className="p-6 text-sm text-slate-500">Loading...</div>
             ) : filteredProjects.length === 0 ? (
-              <div className="p-6 text-sm text-slate-500">No projects found.</div>
+              <div className="p-6 text-sm text-slate-500">
+                {projects.length === 0
+                  ? "No projects yet. Create one on the left."
+                  : "No projects match your search."}
+              </div>
             ) : (
               <ul className="divide-y divide-slate-100">
                 {filteredProjects.map((p) => {
@@ -555,7 +594,9 @@ export default function MyProjects() {
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <div className="font-semibold text-slate-900 truncate">{p.name}</div>
+                          <div className="font-semibold text-slate-900 truncate">
+                            {p.name}
+                          </div>
                           {isActive && (
                             <span className="text-xs font-semibold rounded-full bg-green-100 text-green-700 px-2 py-0.5">
                               Active
@@ -568,25 +609,16 @@ export default function MyProjects() {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        {/* Manage your project */}
                         <button
-                          onClick={() => openManage(p)}
+                          onClick={() => openShareModal(p)}
                           className="rounded-lg bg-white px-3 py-2 text-slate-800 text-sm font-semibold border border-slate-200 hover:bg-slate-50"
-                        >
-                          Manage your project
-                        </button>
-
-                        {/* Share (same as manage, but kept as separate button per your request) */}
-                        <button
-                          onClick={() => openManage(p)}
-                          className="rounded-lg bg-white px-3 py-2 text-slate-800 text-sm font-semibold border border-slate-200 hover:bg-slate-50"
+                          title="Share this project with users/groups"
                         >
                           Share
                         </button>
 
-                        {/* Open */}
                         <button
-                          onClick={() => openProject(p.id)}
+                          onClick={() => selectProject(p.id)}
                           className={
                             isActive
                               ? "rounded-lg bg-green-600 px-3 py-2 text-white text-sm font-semibold"
@@ -604,21 +636,24 @@ export default function MyProjects() {
           </div>
         </div>
 
-        {/* Manage modal */}
-        {manageOpen && manageProject && (
+        {/* Share modal */}
+        {shareOpen && shareProject && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
             <div className="w-full max-w-2xl rounded-2xl bg-white shadow-lg border border-slate-100 overflow-hidden">
               <div className="p-5 border-b border-slate-100 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-slate-500">
-                    Manage your project
+                    Share Project
                   </div>
                   <div className="text-lg font-bold text-slate-900 truncate">
-                    {manageProject.name}
+                    {shareProject.name}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-1">
+                    Add users or groups and set access level.
                   </div>
                 </div>
                 <button
-                  onClick={() => setManageOpen(false)}
+                  onClick={() => setShareOpen(false)}
                   className="rounded-lg bg-white px-3 py-2 text-slate-800 text-sm font-semibold border border-slate-200 hover:bg-slate-50"
                 >
                   Close
@@ -626,17 +661,21 @@ export default function MyProjects() {
               </div>
 
               <div className="p-5 space-y-5">
-                {manageError && (
+                {shareError && (
                   <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {manageError}
+                    {shareError}
                   </div>
                 )}
 
-                {manageLoading && <div className="text-sm text-slate-600">Loading…</div>}
+                {shareLoading && (
+                  <div className="text-sm text-slate-600">Loading…</div>
+                )}
 
                 {/* Create group */}
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-sm font-semibold text-slate-800">Create group</div>
+                  <div className="text-sm font-semibold text-slate-800">
+                    Create group
+                  </div>
                   <div className="mt-2 flex gap-2">
                     <input
                       className="flex-1 rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
@@ -646,7 +685,7 @@ export default function MyProjects() {
                     />
                     <button
                       onClick={createGroup}
-                      disabled={manageLoading || !newGroupName.trim()}
+                      disabled={shareLoading || !newGroupName.trim()}
                       className="rounded-lg bg-slate-900 px-4 py-2 text-white font-semibold hover:bg-black disabled:opacity-60"
                     >
                       Create
@@ -657,7 +696,9 @@ export default function MyProjects() {
                 {/* Add user */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="md:col-span-2">
-                    <div className="text-sm font-semibold text-slate-800">Add user</div>
+                    <div className="text-sm font-semibold text-slate-800">
+                      Add user by email
+                    </div>
                     <input
                       className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
                       placeholder="user@email.com"
@@ -666,7 +707,9 @@ export default function MyProjects() {
                     />
                   </div>
                   <div>
-                    <div className="text-sm font-semibold text-slate-800">Access</div>
+                    <div className="text-sm font-semibold text-slate-800">
+                      Access
+                    </div>
                     <select
                       className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 bg-white"
                       value={shareAccessLevel}
@@ -679,10 +722,10 @@ export default function MyProjects() {
                   <div className="md:col-span-3">
                     <button
                       onClick={addUserMember}
-                      disabled={manageLoading || !shareUserEmail.trim()}
+                      disabled={shareLoading || !shareUserEmail.trim()}
                       className="rounded-lg bg-blue-700 px-4 py-2 text-white font-semibold hover:bg-blue-800 disabled:opacity-60"
                     >
-                      Share (add user)
+                      Add User
                     </button>
                   </div>
                 </div>
@@ -690,7 +733,9 @@ export default function MyProjects() {
                 {/* Add group */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="md:col-span-2">
-                    <div className="text-sm font-semibold text-slate-800">Add group</div>
+                    <div className="text-sm font-semibold text-slate-800">
+                      Add group
+                    </div>
                     <select
                       className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 bg-white"
                       value={selectedGroupId}
@@ -705,7 +750,9 @@ export default function MyProjects() {
                     </select>
                   </div>
                   <div>
-                    <div className="text-sm font-semibold text-slate-800">Access</div>
+                    <div className="text-sm font-semibold text-slate-800">
+                      Access
+                    </div>
                     <select
                       className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 bg-white"
                       value={groupAccessLevel}
@@ -718,100 +765,59 @@ export default function MyProjects() {
                   <div className="md:col-span-3">
                     <button
                       onClick={addGroupMember}
-                      disabled={manageLoading || !selectedGroupId}
+                      disabled={shareLoading || !selectedGroupId}
                       className="rounded-lg bg-slate-900 px-4 py-2 text-white font-semibold hover:bg-black disabled:opacity-60"
                     >
-                      Share (add group)
+                      Add Group
                     </button>
                   </div>
                 </div>
 
                 {/* Current members */}
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-sm font-semibold text-slate-800 mb-3">
+                  <div className="text-sm font-semibold text-slate-800">
                     Current access
                   </div>
 
                   {members.length === 0 ? (
-                    <div className="text-sm text-slate-500">No members shared yet.</div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full border border-slate-200 rounded-lg bg-white">
-                        <thead className="bg-slate-100 text-xs text-slate-600">
-                          <tr>
-                            <th className="px-3 py-2 text-left font-semibold">Name</th>
-                            <th className="px-3 py-2 text-left font-semibold">Type</th>
-                            <th className="px-3 py-2 text-left font-semibold">Groups</th>
-                            <th className="px-3 py-2 text-left font-semibold">Access</th>
-                            <th className="px-3 py-2 text-right font-semibold">Actions</th>
-                          </tr>
-                        </thead>
-
-                        <tbody className="divide-y divide-slate-200 text-sm">
-                          {members.map((m) => {
-                            const isUser = Boolean(m.user_id);
-                            const isGroup = Boolean(m.group_id || m.group_name);
-
-                            const groupsForUser =
-                              isUser && userGroups?.[m.user_id]
-                                ? userGroups[m.user_id].map((g) => g.name).join(", ")
-                                : "—";
-
-                            return (
-                              <tr key={m.id} className="hover:bg-slate-50">
-                                {/* Name */}
-                                <td className="px-3 py-2 font-semibold text-slate-800">
-                                  {memberLabel(m)}
-                                </td>
-
-                                {/* Type */}
-                                <td className="px-3 py-2">
-                                  {isUser ? "User" : "Group"}
-                                </td>
-
-                                {/* Groups */}
-                                <td className="px-3 py-2 text-slate-600">
-                                  {isUser ? groupsForUser : "—"}
-                                </td>
-
-                                {/* Access */}
-                                <td className="px-3 py-2">
-                                  <span
-                                    className={
-                                      "inline-flex rounded-full px-2 py-0.5 text-xs font-semibold border " +
-                                      (m.access_level === "editor"
-                                        ? "bg-green-50 text-green-700 border-green-200"
-                                        : "bg-slate-100 text-slate-700 border-slate-200")
-                                    }
-                                  >
-                                    {m.access_level || "viewer"}
-                                  </span>
-                                </td>
-
-                                {/* Actions */}
-                                <td className="px-3 py-2 text-right">
-                                  <button
-                                    onClick={() => removeMember(m.id)}
-                                    disabled={manageLoading}
-                                    className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-red-700 border border-red-200 hover:bg-red-50 disabled:opacity-60"
-                                  >
-                                    Remove
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                    <div className="mt-2 text-sm text-slate-500">
+                      No members shared yet.
                     </div>
+                  ) : (
+                    <ul className="mt-3 divide-y divide-slate-200">
+                      {members.map((m) => (
+                        <li
+                          key={m.id}
+                          className="py-2 flex items-center justify-between gap-3"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-800 truncate">
+                              {memberLabel(m)}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              access:{" "}
+                              <span className="font-semibold">
+                                {m.access_level || "viewer"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => removeMember(m.id)}
+                            disabled={shareLoading}
+                            className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-red-700 border border-red-200 hover:bg-red-50 disabled:opacity-60"
+                            title="Remove access"
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
 
-
-
                 <div className="text-xs text-slate-500">
-                  Tip: “Manage your project” and “Share” open the same panel (you can keep both
-                  buttons or remove one later).
+                  Backend required: groups, group_members and project_members endpoints.
                 </div>
               </div>
             </div>
