@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Any, Optional, Tuple
+from fastapi import HTTPException
 from openai import OpenAI
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
@@ -22,18 +23,32 @@ def call_ai_json(user_prompt: str) -> Tuple[str, Optional[Any]]:
     """
     Returns (raw_text, parsed_json_or_none)
     """
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    resp = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_BASE},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.2,
-    )
-    raw = resp.choices[0].message.content or ""
-    parsed = _try_parse_json(raw)
-    return raw, parsed
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is missing on backend")
+
+    print(f"[AI] Using model: {MODEL}")
+    print(f"[AI] API key length: {len(api_key)}")
+    
+    try:
+        client = OpenAI(api_key=api_key)
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_BASE},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+        )
+        raw = resp.choices[0].message.content or ""
+        parsed = _try_parse_json(raw)
+        return raw, parsed
+    except Exception as e:
+        error_msg = f"OpenAI call failed: {str(e)}"
+        print(f"[AI ERROR] {error_msg}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=502, detail=error_msg) from e
 
 def prompt_testcases(requirement: str) -> str:
     return f"""

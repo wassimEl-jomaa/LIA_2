@@ -199,11 +199,88 @@ async def remove_project_member(
     ).scalars().first()
 
     if not member:
-        raise HTTPException(status_code=404, detail="Member not found")
+        # Try to find in group members
+        group_member = (
+            await db.execute(
+                select(ProjectGroupMember).where(
+                    ProjectGroupMember.id == member_id,
+                    ProjectGroupMember.project_id == project_id,
+                )
+            )
+        ).scalars().first()
+        
+        if not group_member:
+            raise HTTPException(status_code=404, detail="Member not found")
+        
+        await db.delete(group_member)
+        await db.commit()
+        return {"status": "deleted", "id": member_id}
 
     await db.delete(member)
     await db.commit()
     return {"status": "deleted", "id": member_id}
+
+
+@router.post("/{project_id}/groups")
+async def add_project_group(
+    project_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    # only owner/admin can share
+    await ensure_project_admin(db, project_id, user)
+
+    group_id = payload.get("group_id")
+    access_level = payload.get("access_level", "viewer")
+
+    if not group_id:
+        raise HTTPException(status_code=400, detail="group_id is required")
+
+    # verify group exists and belongs to same org
+    group = (await db.execute(select(Group).where(Group.id == group_id))).scalars().first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if user.organization_id and group.organization_id != user.organization_id:
+        raise HTTPException(status_code=403, detail="Group not in your organization")
+
+    # check if already added
+    existing = (
+        await db.execute(
+            select(ProjectGroupMember).where(
+                ProjectGroupMember.project_id == project_id,
+                ProjectGroupMember.group_id == group_id,
+            )
+        )
+    ).scalars().first()
+
+    if existing:
+        return {
+            "status": "already_exists",
+            "id": existing.id,
+            "project_id": existing.project_id,
+            "group_id": existing.group_id,
+            "access_level": existing.access_level,
+            "group_name": group.name,
+        }
+
+    gm = ProjectGroupMember(
+        project_id=project_id,
+        group_id=group_id,
+        access_level=access_level,
+    )
+    db.add(gm)
+    await db.commit()
+    await db.refresh(gm)
+
+    return {
+        "id": gm.id,
+        "project_id": gm.project_id,
+        "group_id": gm.group_id,
+        "access_level": gm.access_level,
+        "group_name": group.name,
+    }
 
 
 @router.patch("/{project_id}/members/{member_id}", response_model=ProjectMemberOut)

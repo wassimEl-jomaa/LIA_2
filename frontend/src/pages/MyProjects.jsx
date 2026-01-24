@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const API_BASE = "http://127.0.0.1:8000";
@@ -34,16 +34,14 @@ export default function MyProjects() {
 
   // projects
   const [projects, setProjects] = useState([]);
-  const [projectName, setProjectName] = useState("");
   const [activeProjectId, setActiveProjectId] = useState(
     Number(localStorage.getItem("active_project_id")) || null
   );
 
   // ui
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
-  const [query, setQuery] = useState("");
+  const [sortBy, setSortBy] = useState("created_desc"); // created_desc | created_asc | name_asc | name_desc
 
   // manage modal
   const [manageOpen, setManageOpen] = useState(false);
@@ -67,9 +65,18 @@ export default function MyProjects() {
   // create group
   const [newGroupName, setNewGroupName] = useState("");
  
-  const filteredProjects = projects.filter((p) =>
-    (p.name || "").toLowerCase().includes(query.toLowerCase())
-  );
+  const sortedProjects = [...projects].sort((a, b) => {
+    if (sortBy === "name_asc") {
+      return (a.name || "").localeCompare(b.name || "");
+    }
+    if (sortBy === "name_desc") {
+      return (b.name || "").localeCompare(a.name || "");
+    }
+    const ad = new Date(a.created_at || 0).getTime();
+    const bd = new Date(b.created_at || 0).getTime();
+    if (sortBy === "created_asc") return ad - bd;
+    return bd - ad; // created_desc default
+  });
 
   /** ---------- Authorized fetch wrapper ---------- */
   async function authFetch(url, options = {}) {
@@ -147,39 +154,6 @@ export default function MyProjects() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** ---------- Create project ---------- */
-  async function createProject(e) {
-    e.preventDefault();
-    if (!projectName.trim()) return;
-
-    setError("");
-    setCreating(true);
-
-    try {
-      const res = await authFetch(`${API_BASE}/api/projects`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: projectName.trim() }),
-      });
-
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.detail || "Failed to create project");
-
-      setProjects((prev) => [data, ...prev]);
-      setProjectName("");
-
-      setActiveProjectId(data.id);
-      localStorage.setItem("active_project_id", String(data.id));
-
-      // go to selected project
-      navigate(`/projects/${data.id}`);
-    } catch (err) {
-      setError(err.message || "Something went wrong");
-    } finally {
-      setCreating(false);
-    }
-  }
-
   /** ---------- Open project ---------- */
   function openProject(id) {
     setActiveProjectId(id);
@@ -205,33 +179,17 @@ export default function MyProjects() {
   const arr = Array.isArray(data) ? data : [];
   setMembers(arr);
 
-  const userIds = [...new Set(arr.map((m) => m.user_id).filter(Boolean))];
-  if (userIds.length === 0) {
-    setMemberUsers({});
-    setUserGroups({});
-    return;
-  }
-
+  // Extract user data from the members response (already includes role_name and groups)
   const usersMap = {};
   const groupsMap = {};
 
-  for (const userId of userIds) {
-    try {
-      const userRes = await authFetch(`${API_BASE}/api/users/${userId}`);
-      const userData = await userRes.json().catch(() => null);
-
-      if (userRes.ok && userData) {
-        usersMap[userId] = userData;
-
-        // ✅ if backend returns groups
-        if (Array.isArray(userData.groups)) {
-          groupsMap[userId] = userData.groups;
-        } else {
-          groupsMap[userId] = [];
-        }
-      }
-    } catch {
-      groupsMap[userId] = [];
+  for (const m of arr) {
+    if (m.user && m.user_id) {
+      usersMap[m.user_id] = {
+        ...m.user,
+        role: m.user.role_name, // Add role field for compatibility
+      };
+      groupsMap[m.user_id] = m.user.groups || [];
     }
   }
 
@@ -244,13 +202,7 @@ export default function MyProjects() {
   // User member
   if (m.user_id) {
     const u = memberUsers[m.user_id];
-    const name = u?.name || u?.email || m.user_email || `User ID: ${m.user_id}`;
-
-    const gs = userGroups[m.user_id] || [];
-    const groupText =
-      gs.length > 0 ? gs.map((g) => g.name).join(", ") : "—";
-
-    return `${name} • Groups: ${groupText}`;
+    return u?.name || u?.email || m.user_email || `User ID: ${m.user_id}`;
   }
 
   // Group member (project shared with a group)
@@ -446,6 +398,14 @@ export default function MyProjects() {
                 Refresh
               </button>
 
+              {/* New Project CTA */}
+              <button
+                onClick={() => navigate("/projects/new")}
+                className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800"
+              >
+                New Project
+              </button>
+
               {/* Logout */}
               <button
                 onClick={() => safeLogout(navigate)}
@@ -457,7 +417,7 @@ export default function MyProjects() {
           </div>
 
           {/* Summary cards */}
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-500">Active Project</div>
               <div className="mt-1 font-bold text-slate-900 truncate">
@@ -465,13 +425,6 @@ export default function MyProjects() {
               </div>
               <div className="mt-1 text-xs text-slate-600">
                 project_id: <span className="font-semibold">{activeProjectId ?? "—"}</span>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-xs font-semibold text-slate-500">Create new project</div>
-              <div className="mt-1 text-sm text-slate-700">
-                Use clear names like <span className="font-semibold">Customer A – QA</span>.
               </div>
             </div>
 
@@ -490,43 +443,8 @@ export default function MyProjects() {
           </div>
         )}
 
-        {/* Main grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Create */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 lg:col-span-1">
-            <h2 className="text-lg font-bold text-slate-900">Create new project</h2>
-
-            <form onSubmit={createProject} className="mt-4 space-y-3">
-              <input
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                placeholder="New project name…"
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-              />
-
-              {/* Create */}
-              <button
-                type="submit"
-                disabled={creating || !projectName.trim()}
-                className="w-full rounded-lg bg-blue-700 px-4 py-2 text-white font-semibold hover:bg-blue-800 disabled:opacity-60"
-              >
-                {creating ? "Creating..." : "Create"}
-              </button>
-            </form>
-
-            <div className="mt-5">
-              <label className="text-xs font-semibold text-slate-500">Search projects</label>
-              <input
-                className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                placeholder="Type to filter…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* List */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 lg:col-span-2 overflow-hidden">
+        {/* Projects List */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold text-slate-800">Projects</div>
@@ -534,57 +452,76 @@ export default function MyProjects() {
                   Buttons: Manage your project • Share • Open
                 </div>
               </div>
-              <div className="text-xs text-slate-500">
-                Total: <span className="font-semibold">{filteredProjects.length}</span>
+              <div className="flex items-center gap-3">
+                <div className="text-xs text-slate-500">
+                  Total: <span className="font-semibold">{sortedProjects.length}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-slate-600">Sort</label>
+                  <select
+                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                  >
+                    <option value="created_desc">Newest</option>
+                    <option value="created_asc">Oldest</option>
+                    <option value="name_asc">Name A→Z</option>
+                    <option value="name_desc">Name Z→A</option>
+                  </select>
+                </div>
               </div>
             </div>
 
             {loading ? (
-              <div className="p-6 text-sm text-slate-500">Loading…</div>
-            ) : filteredProjects.length === 0 ? (
+              <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="animate-pulse rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="h-4 w-2/3 bg-slate-200 rounded" />
+                    <div className="mt-2 h-3 w-1/2 bg-slate-200 rounded" />
+                    <div className="mt-4 h-8 w-full bg-slate-200 rounded" />
+                  </div>
+                ))}
+              </div>
+            ) : sortedProjects.length === 0 ? (
               <div className="p-6 text-sm text-slate-500">No projects found.</div>
             ) : (
-              <ul className="divide-y divide-slate-100">
-                {filteredProjects.map((p) => {
+              <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {sortedProjects.map((p) => {
                   const isActive = p.id === activeProjectId;
-
                   return (
-                    <li
-                      key={p.id}
-                      className="px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
+                    <div key={p.id} className="rounded-xl border border-slate-200 bg-white hover:shadow-sm transition p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="min-w-0">
                           <div className="font-semibold text-slate-900 truncate">{p.name}</div>
-                          {isActive && (
-                            <span className="text-xs font-semibold rounded-full bg-green-100 text-green-700 px-2 py-0.5">
-                              Active
-                            </span>
-                          )}
+                          <div className="text-xs text-slate-500 mt-1">
+                            id: {p.id} • created: {p.created_at}
+                          </div>
                         </div>
-                        <div className="text-xs text-slate-500 mt-1">
-                          id: {p.id} • created: {p.created_at}
-                        </div>
+                        {isActive && (
+                          <span className="text-xs font-semibold rounded-full bg-green-100 text-green-700 px-2 py-0.5">Active</span>
+                        )}
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        {/* Manage your project */}
+                      {p.organization_id && (
+                        <div className="mb-2">
+                          <span className="text-xs font-semibold text-slate-700">Org ID:</span>
+                          <span className="text-xs text-slate-600 ml-1">{p.organization_id}</span>
+                        </div>
+                      )}
+
+                      {p.description && (
+                        <div className="mb-3">
+                          <p className="text-xs text-slate-600">{p.description}</p>
+                        </div>
+                      )}
+
+                      <div className="mt-4 flex items-center gap-2">
                         <button
-                          onClick={() => openManage(p)}
+                          onClick={() => navigate(`/projects/${p.id}/manage`)}
                           className="rounded-lg bg-white px-3 py-2 text-slate-800 text-sm font-semibold border border-slate-200 hover:bg-slate-50"
                         >
-                          Manage your project
+                          Manage
                         </button>
-
-                        {/* Share (same as manage, but kept as separate button per your request) */}
-                        <button
-                          onClick={() => openManage(p)}
-                          className="rounded-lg bg-white px-3 py-2 text-slate-800 text-sm font-semibold border border-slate-200 hover:bg-slate-50"
-                        >
-                          Share
-                        </button>
-
-                        {/* Open */}
                         <button
                           onClick={() => openProject(p.id)}
                           className={
@@ -596,12 +533,11 @@ export default function MyProjects() {
                           Open
                         </button>
                       </div>
-                    </li>
+                    </div>
                   );
                 })}
-              </ul>
+              </div>
             )}
-          </div>
         </div>
 
         {/* Manage modal */}
@@ -761,17 +697,39 @@ export default function MyProjects() {
                               <tr key={m.id} className="hover:bg-slate-50">
                                 {/* Name */}
                                 <td className="px-3 py-2 font-semibold text-slate-800">
-                                  {memberLabel(m)}
+                                  {isUser ? (
+                                    memberUsers[m.user_id]?.name || 
+                                    memberUsers[m.user_id]?.email || 
+                                    m.user?.name || 
+                                    m.user?.email || 
+                                    `User ID: ${m.user_id}`
+                                  ) : isGroup ? (
+                                    m.group?.name || m.group_name || `Group ${m.group_id}`
+                                  ) : (
+                                    "Member"
+                                  )}
                                 </td>
 
                                 {/* Type */}
                                 <td className="px-3 py-2">
-                                  {isUser ? "User" : "Group"}
+                                  {isUser ? (
+                                    memberUsers[m.user_id]?.role || 
+                                    m.user?.role_name || 
+                                    "User"
+                                  ) : (
+                                    "Group"
+                                  )}
                                 </td>
 
                                 {/* Groups */}
                                 <td className="px-3 py-2 text-slate-600">
-                                  {isUser ? groupsForUser : "—"}
+                                  {isUser ? (
+                                    groupsForUser || "—"
+                                  ) : isGroup ? (
+                                    m.group_name || `Group ${m.group_id}`
+                                  ) : (
+                                    "—"
+                                  )}
                                 </td>
 
                                 {/* Access */}

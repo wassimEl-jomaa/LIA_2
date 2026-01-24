@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from dotenv import load_dotenv
 import os
+from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi import Request
@@ -24,7 +25,14 @@ from .models import Requirement
 from .schemas import RequirementCreateIn, RequirementUpdateIn, RequirementOut
 from .schemas import TestCasesIn, RiskIn, RegressionIn, SummaryIn, AIOut, HistoryItem, RequestLogOut
 from .ai import call_ai_json, prompt_testcases, prompt_risk, prompt_regression, prompt_summary
-load_dotenv()
+
+# Load .env from backend/ directory (one level up from app/)
+env_path = Path(__file__).parent.parent / ".env"
+print(f"[ENV] Loading .env from: {env_path}")
+print(f"[ENV] .env exists: {env_path.exists()}")
+load_dotenv(dotenv_path=env_path, override=True)
+print(f"[ENV] OPENAI_API_KEY length after load: {len(os.getenv('OPENAI_API_KEY', ''))}")
+print(f"[ENV] OPENAI_MODEL after load: {os.getenv('OPENAI_MODEL', 'NOT SET')}")
 
 app = FastAPI(title="AI Assistant for Testers (Noor Engineering MVP)")
 app.add_middleware(

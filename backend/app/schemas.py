@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, Any, List, Literal
 
@@ -31,14 +32,15 @@ class TokenOut(BaseModel):
 # ---------- PROJECTS ----------
 class ProjectCreateIn(BaseModel):
     name: str = Field(min_length=2, max_length=150)
-    description: Optional[str] = Field(default=None, max_length=255)
-    organization_id: Optional[int] = None
+    description: Optional[str] = None
+    organization: Optional[str] = None
 
 
 class ProjectOut(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
+    organization: Optional[str] = None
     organization_id: Optional[int] = None
     owner_user_id: int
     created_at: str
@@ -67,6 +69,9 @@ class RequestLogOut(BaseModel):
     input_text: str
     output_text: str
     created_at: str
+    user_id: Optional[int] = None
+    user_name: Optional[str] = None
+    group_name: Optional[str] = None
 
 class SummaryIn(BaseIn):
     test_results: str = Field(min_length=5)
@@ -124,7 +129,7 @@ class OrganizationOut(BaseModel):
     address: str | None
     city: str | None
     country: str | None
-    created_at: str
+    created_at: datetime
 class RoleCreateIn(BaseModel):
     name: str = Field(min_length=2, max_length=50)
     is_admin: bool = False
@@ -204,6 +209,8 @@ class GroupCreateIn(BaseModel):
 class GroupOut(BaseModel):
     id: int
     name: str
+    organization_id: Optional[int] = None
+    created_at: Optional[str] = None
 # ---------- GROUP MEMBERS & PROJECT MEMBERS ----------
 class GroupMemberAddIn(BaseModel):
     user_id: int

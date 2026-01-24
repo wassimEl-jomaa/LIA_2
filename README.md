@@ -66,4 +66,5 @@ uvicorn app.main:app --reload
 👉 http://127.0.0.1:8000/docs
 
 Use the interactive Swagger UI to test endpoints.
-wasim.el-jomaa@studerande.plushogskolan.se
+
+Add your own OpenAI API key via environment variables or a `.env` file; do not commit secrets to version control.

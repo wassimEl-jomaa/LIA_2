@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
+from sqlalchemy.orm import selectinload
 from .db import get_db
 from .auth import get_current_user
 from .models import Group, GroupMember, User
@@ -24,6 +25,20 @@ async def list_groups(db: AsyncSession = Depends(get_db), user: User = Depends(g
     stmt = select(Group).where(Group.organization_id == user.organization_id).order_by(Group.name.asc())
     rows = (await db.execute(stmt)).scalars().all()
     return [GroupOut(id=r.id, organization_id=r.organization_id, name=r.name, created_at=str(r.created_at)) for r in rows]
+
+@router.get("/{group_id}/members")
+async def list_group_members(group_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    grp = (await db.execute(select(Group).where(Group.id == group_id))).scalars().first()
+    if not grp or grp.organization_id != user.organization_id:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    stmt = (
+        select(GroupMember)
+        .where(GroupMember.group_id == group_id)
+        .options(selectinload(GroupMember.user))
+    )
+    members = (await db.execute(stmt)).scalars().all()
+    return [{"id": m.id, "group_id": m.group_id, "user_id": m.user_id} for m in members]
 
 @router.post("/{group_id}/members")
 async def add_member(group_id: int, payload: GroupMemberAddIn, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):

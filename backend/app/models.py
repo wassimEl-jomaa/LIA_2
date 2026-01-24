@@ -1,5 +1,6 @@
 from sqlalchemy import Boolean, String, Text, DateTime, UniqueConstraint, func, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from datetime import datetime
 
 from .db import Base
 
@@ -20,7 +21,7 @@ class Organization(Base):
     city: Mapped[str | None] = mapped_column(String(120), nullable=True)
     country: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
-    created_at: Mapped[str] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False
@@ -39,6 +40,7 @@ class Project(Base):
 
     name: Mapped[str] = mapped_column(String(150), index=True, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    organization: Mapped[str | None] = mapped_column(String(150), nullable=True)
 
     organization_id: Mapped[int | None] = mapped_column(
         ForeignKey("organizations.id"),
