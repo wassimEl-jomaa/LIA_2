@@ -93,32 +93,12 @@ export default function Header() {
               About
             </NavLink>
 
-            {/* Test Cases (requires selected project) */}
-            {isLoggedIn && (
-              testCasesDisabled ? (
-                <button
-                  type="button"
-                  onClick={() => navigate("/projects")}
-                  className={`${baseLink} bg-white/10 text-white/70 hover:bg-white/15`}
-                  title="Select a project first (go to My Projects)"
-                >
-                  Test Cases
-                </button>
-              ) : (
-                <NavLink to="/testcases" className={navLinkClass}>
-                  Test Cases
-                </NavLink>
-              )
-            )}
+            
           </nav>
 
           {/* Right side actions */}
           <div className="flex items-center gap-2">
-            {isLoggedIn && (
-              <span className={`${pill} hidden md:inline-flex`} title="Active project id">
-                Project: <span className="ml-1 text-white">{activeProjectId || "—"}</span>
-              </span>
-            )}
+            
 
             {isLoggedIn ? (
               <button
