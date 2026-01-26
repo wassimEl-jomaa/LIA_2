@@ -181,7 +181,7 @@ export default function RequestLogDetails() {
                 </div>
               </div>
 
-              // ...existing code...
+             
 
               {/* Output Section */}
               <div className="rounded-lg border border-gray-200 overflow-hidden">
@@ -193,7 +193,7 @@ export default function RequestLogDetails() {
                   {parsedOutput ? (
                     <div className="space-y-4">
                       {/* Test Cases */}
-                      // ...existing code...
+                     
                             {parsedOutput.test_cases.map((tc, idx) => (
                               <div key={idx} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                                 <div className="flex items-start justify-between">
@@ -226,7 +226,10 @@ export default function RequestLogDetails() {
                                   <button className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">
                                     Del Test Cases
                                   </button>
-                                  <button className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">
+                                  <button
+                                    onClick={() => navigate(`/projects/${projectId}/logs/${logId}/execute?selected=${idx}`)}
+                                    className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                                  >
                                     Add Exekvering Test Cases
                                   </button>
                                 </div>
@@ -265,7 +268,7 @@ export default function RequestLogDetails() {
                                 )}
                               </div>
                             ))}
-// ...existing code...
+
 
                       {/* Notes */}
                       {parsedOutput.notes && parsedOutput.notes.length > 0 && (
