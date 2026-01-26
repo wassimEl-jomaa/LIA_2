@@ -16,15 +16,17 @@ from .organizations import router as organizations_router
 from .roles import router as roles_router
 from .users import router as users_router
 from .requirement import router as requirements_router
+from .test_cases import router as test_cases_router
 from .groups import router as groups_router
 from .project_sharing import router as project_sharing_router
 from .ml import predict_category
 from .schemas import RequirementPredictIn, RequirementPredictOut
-from .models import RequestLog, User, Project
+from .models import User, Project
 from .models import Requirement
 from .schemas import RequirementCreateIn, RequirementUpdateIn, RequirementOut
-from .schemas import TestCasesIn, RiskIn, RegressionIn, SummaryIn, AIOut, HistoryItem, RequestLogOut
+from .schemas import TestCasesIn, RiskIn, RegressionIn, SummaryIn, AIOut, HistoryItem
 from .ai import call_ai_json, prompt_testcases, prompt_risk, prompt_regression, prompt_summary
+from .request_logs import router as request_logs_router, log_and_return
 
 # Load .env from backend/ directory (one level up from app/)
 env_path = Path(__file__).parent.parent / ".env"
@@ -53,6 +55,8 @@ app.include_router(users_router)
 app.include_router(requirements_router) # requires requirement.py
 app.include_router(groups_router)
 app.include_router(project_sharing_router)
+app.include_router(test_cases_router)
+app.include_router(request_logs_router)
 # DEBUG: show full traceback in Swagger when 500 happens
 @app.exception_handler(Exception)
 async def debug_exception_handler(request: Request, exc: Exception):
@@ -95,23 +99,7 @@ async def ensure_project_owner(db: AsyncSession, project_id: int, user_id: int) 
     return project
 
 
-async def _log_and_return(
-    db: AsyncSession,
-    project_id: int,
-    endpoint: str,
-    input_text: str,
-    raw_text: str,
-    parsed_json
-) -> AIOut:
-    db_obj = RequestLog(
-        project_id=project_id,
-        endpoint=endpoint,
-        input_text=input_text,
-        output_text=raw_text
-    )
-    db.add(db_obj)
-    await db.commit()
-    return AIOut(parsed_json=parsed_json, raw_text=raw_text)
+# RequestLog handling moved to `request_logs.py` (use `log_and_return`)
 
 
 def _require_openai_key():
@@ -135,7 +123,7 @@ async def make_testcases(
     user_prompt = prompt_testcases(payload.requirement)
     raw, parsed = call_ai_json(user_prompt)
 
-    return await _log_and_return(
+    return await log_and_return(
         db=db,
         project_id=payload.project_id,
         endpoint="testcases",
@@ -157,7 +145,7 @@ async def analyze_risk(
     user_prompt = prompt_risk(payload.requirement)
     raw, parsed = call_ai_json(user_prompt)
 
-    return await _log_and_return(
+    return await log_and_return(
         db=db,
         project_id=payload.project_id,
         endpoint="risk",
@@ -183,7 +171,7 @@ async def suggest_regression(
     user_prompt = prompt_regression(payload.change_description, payload.changed_components)
     raw, parsed = call_ai_json(user_prompt)
 
-    return await _log_and_return(
+    return await log_and_return(
         db=db,
         project_id=payload.project_id,
         endpoint="regression",
@@ -209,7 +197,7 @@ async def summarize(
     user_prompt = prompt_summary(payload.test_results, payload.bug_reports)
     raw, parsed = call_ai_json(user_prompt)
 
-    return await _log_and_return(
+    return await log_and_return(
         db=db,
         project_id=payload.project_id,
         endpoint="summary",
@@ -223,54 +211,4 @@ async def summarize(
 # PROTECTED HISTORY
 # =========================
 
-@app.get("/api/history", response_model=list[HistoryItem])
-async def history(
-    project_id: int,
-    limit: int = 20,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    # Ensure this user owns the project
-    await ensure_project_owner(db, project_id, user.id)
-
-    stmt = (
-        select(RequestLog)
-        .where(RequestLog.project_id == project_id)
-        .order_by(desc(RequestLog.id))
-        .limit(min(limit, 200))
-    )
-    rows = (await db.execute(stmt)).scalars().all()
-
-    return [
-        HistoryItem(
-            id=r.id,
-            project_id=r.project_id,
-            endpoint=r.endpoint,
-            created_at=str(r.created_at)
-        )
-        for r in rows
-    ]
-@app.get("/api/history/{log_id}", response_model=RequestLogOut)
-async def history_detail(
-    log_id: int,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    # Hämta logg
-    log = (await db.execute(select(RequestLog).where(RequestLog.id == log_id))).scalars().first()
-    if not log:
-        raise HTTPException(status_code=404, detail="Log not found")
-
-    # Säkerhet: kontrollera att användaren äger projektet
-    project = (await db.execute(select(Project).where(Project.id == log.project_id))).scalars().first()
-    if not project or project.owner_user_id != user.id:
-        raise HTTPException(status_code=403, detail="Not allowed")
-
-    return RequestLogOut(
-        id=log.id,
-        project_id=log.project_id,
-        endpoint=log.endpoint,
-        input_text=log.input_text,
-        output_text=log.output_text,
-        created_at=str(log.created_at),
-    )
+# History endpoints moved to `request_logs.py`

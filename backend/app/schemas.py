@@ -73,6 +73,18 @@ class RequestLogOut(BaseModel):
     user_name: Optional[str] = None
     group_name: Optional[str] = None
 
+
+class RequestLogCreateIn(BaseModel):
+    project_id: int
+    endpoint: str
+    input_text: str
+    output_text: str
+
+
+class RequestLogUpdateIn(BaseModel):
+    input_text: Optional[str] = None
+    output_text: Optional[str] = None
+
 class SummaryIn(BaseIn):
     test_results: str = Field(min_length=5)
     bug_reports: Optional[str] = None
@@ -189,6 +201,9 @@ class RequirementPredictOut(BaseModel):
 class RequirementCreateIn(BaseModel):
     project_id: int
     text: str = Field(min_length=10)
+    # Optional test cases to create together with the requirement
+    # Each item should include title, optional description, steps and expected_result
+    test_cases: Optional[List[dict]] = None
 
 class RequirementUpdateIn(BaseModel):
     text: str = Field(min_length=10)
@@ -200,6 +215,8 @@ class RequirementOut(BaseModel):
     predicted_category: str
     confidence: float
     probabilities: Optional[dict[str, float]] = None
+    # Optionally include created test cases when the requirement was created
+    test_cases: Optional[List[dict]] = None
     created_at: str    
 
 # ---------- GROUPS & PROJECT MEMBERS ----------
@@ -262,3 +279,48 @@ class ProjectSharesOut(BaseModel):
 class ProjectMemberAddByEmailIn(BaseModel):
     email: str  # ← This is the field name!
     access_level: str
+
+
+# ---------- TEST CASES ----------
+class TestCaseCreateIn(BaseModel):
+    project_id: int
+    title: str = Field(min_length=1)
+    description: Optional[str] = None
+    # steps can be submitted as a list of step strings
+    steps: Optional[List[str]] = None
+    expected_result: Optional[str] = None
+
+
+class TestCaseOut(BaseModel):
+    id: int
+    project_id: int
+    title: str
+    description: Optional[str] = None
+    steps: Optional[List[str]] = None
+    expected_result: Optional[str] = None
+    priority: Optional[str] = None
+    status: Optional[str] = None
+    created_at: str
+
+
+# ---------- TEST EXECUTIONS (Exekvering) ----------
+class TestExecutionCreateIn(BaseModel):
+    project_id: int
+    test_case_id: int
+    result: Literal["Passed", "Failed", "Blocked", "Skipped", "Pending"] = "Pending"
+    notes: Optional[str] = None
+
+
+class TestExecutionOut(BaseModel):
+    id: int
+    project_id: int
+    test_case_id: int
+    executed_by_user_id: Optional[int] = None
+    result: str
+    notes: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    created_at: str
+
+    class Config:
+        from_attributes = True
