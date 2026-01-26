@@ -160,10 +160,7 @@ Acceptance criteria:
           <div className="relative p-6">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div className="space-y-2">
-                <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-100">
-                  QA Copilot
-                  <span className="text-[11px] font-semibold text-blue-600">v1</span>
-                </div>
+                
                 <h1 className="text-3xl font-bold text-slate-900">Test Cases</h1>
                 <p className="text-sm text-slate-600 max-w-2xl">
                   Turn requirements into structured, high-value test cases. Classify scope, generate cases, and copy results in one place.
@@ -234,7 +231,7 @@ Acceptance criteria:
           {/* Input card */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-800">Input</div>
+              <div className="text-sm font-semibold text-slate-800">Write your krave </div>
               <div className="text-xs text-slate-500">{charCount} chars</div>
             </div>
 
@@ -349,7 +346,7 @@ Acceptance criteria:
           {/* Output card */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-800">Output</div>
+              <div className="text-sm font-semibold text-slate-800">Test cases</div>
               {loading && (
                 <div className="text-xs text-slate-500">Generating…</div>
               )}

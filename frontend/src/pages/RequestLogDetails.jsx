@@ -172,7 +172,7 @@ export default function RequestLogDetails() {
               {/* Input Section */}
               <div className="rounded-lg border border-gray-200 overflow-hidden">
                 <div className="bg-gray-50 px-6 py-3 border-b border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-900">Input Text</h3>
+                  <h3 className="text-sm font-semibold text-gray-900">krav user story</h3>
                 </div>
                 <div className="bg-white p-6">
                   <pre className="whitespace-pre-wrap text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg p-4 overflow-auto max-h-96">
@@ -181,53 +181,82 @@ export default function RequestLogDetails() {
                 </div>
               </div>
 
+              // ...existing code...
+
               {/* Output Section */}
               <div className="rounded-lg border border-gray-200 overflow-hidden">
                 <div className="bg-gray-50 px-6 py-3 border-b border-gray-200">
                   <h3 className="text-sm font-semibold text-gray-900">Output Text</h3>
                 </div>
+
                 <div className="bg-white p-6">
                   {parsedOutput ? (
                     <div className="space-y-4">
                       {/* Test Cases */}
-                      {parsedOutput.test_cases && (
-                        <div>
-                          <h4 className="text-sm font-semibold text-gray-900 mb-3">Test Cases ({parsedOutput.test_cases.length})</h4>
-                          <div className="space-y-3">
+                      // ...existing code...
                             {parsedOutput.test_cases.map((tc, idx) => (
                               <div key={idx} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                                 <div className="flex items-start justify-between">
-                                  <div className="font-semibold text-gray-900">{tc.id || `TC-${idx + 1}`}: {tc.title}</div>
+                                  <div className="font-semibold text-gray-900">
+                                    {tc.id || `TC-${idx + 1}`}: {tc.title}
+                                  </div>
                                   {tc.priority && (
-                                    <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                                      tc.priority === 'High' ? 'bg-red-100 text-red-800' :
-                                      tc.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                                      'bg-blue-100 text-blue-800'
-                                    }`}>
+                                    <span
+                                      className={`px-2 py-1 text-xs font-semibold rounded ${
+                                        tc.priority === "High"
+                                          ? "bg-red-100 text-red-800"
+                                          : tc.priority === "Medium"
+                                          ? "bg-yellow-100 text-yellow-800"
+                                          : "bg-blue-100 text-blue-800"
+                                      }`}
+                                    >
                                       {tc.priority}
                                     </span>
                                   )}
                                 </div>
-                                {tc.type && <div className="text-xs text-gray-600 mt-1">Type: {tc.type}</div>}
-                                
+
+                                {/* Action buttons at top */}
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <button className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">
+                                    Edit Test Cases
+                                  </button>
+                                  <button className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+                                    Update
+                                  </button>
+                                  <button className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">
+                                    Del Test Cases
+                                  </button>
+                                  <button className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">
+                                    Add Exekvering Test Cases
+                                  </button>
+                                </div>
+
+                                {tc.type && (
+                                  <div className="text-xs text-gray-600 mt-2">Type: {tc.type}</div>
+                                )}
+
                                 {tc.preconditions && tc.preconditions.length > 0 && (
                                   <div className="mt-3">
                                     <div className="text-sm font-semibold text-gray-700">Preconditions:</div>
                                     <ul className="list-disc list-inside text-sm text-gray-700 mt-1 space-y-1">
-                                      {tc.preconditions.map((pre, i) => <li key={i}>{pre}</li>)}
+                                      {tc.preconditions.map((pre, i) => (
+                                        <li key={i}>{pre}</li>
+                                      ))}
                                     </ul>
                                   </div>
                                 )}
-                                
+
                                 {tc.steps && tc.steps.length > 0 && (
                                   <div className="mt-3">
                                     <div className="text-sm font-semibold text-gray-700">Steps:</div>
                                     <ol className="list-decimal list-inside text-sm text-gray-700 mt-1 space-y-1">
-                                      {tc.steps.map((step, i) => <li key={i}>{step}</li>)}
+                                      {tc.steps.map((step, i) => (
+                                        <li key={i}>{step}</li>
+                                      ))}
                                     </ol>
                                   </div>
                                 )}
-                                
+
                                 {tc.expected && (
                                   <div className="mt-3">
                                     <div className="text-sm font-semibold text-gray-700">Expected Result:</div>
@@ -236,9 +265,7 @@ export default function RequestLogDetails() {
                                 )}
                               </div>
                             ))}
-                          </div>
-                        </div>
-                      )}
+// ...existing code...
 
                       {/* Notes */}
                       {parsedOutput.notes && parsedOutput.notes.length > 0 && (

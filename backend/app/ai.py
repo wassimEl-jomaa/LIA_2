@@ -3,6 +3,14 @@ import os
 from typing import Any, Optional, Tuple
 from fastapi import HTTPException
 from openai import OpenAI
+from dotenv import load_dotenv, find_dotenv
+
+# Load environment variables from a .env file located in this folder or parent folders
+dotenv_path = find_dotenv()
+if dotenv_path:
+  load_dotenv(dotenv_path)
+else:
+  load_dotenv()
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 
@@ -30,6 +38,10 @@ def call_ai_json(user_prompt: str) -> Tuple[str, Optional[Any]]:
     print(f"[AI] Using model: {MODEL}")
     print(f"[AI] API key length: {len(api_key)}")
     
+    # Detect obviously placeholder keys and fail early with a clearer message
+    if api_key.lower().startswith("your-act") or "replace" in api_key.lower():
+      raise HTTPException(status_code=500, detail="OPENAI_API_KEY appears to be a placeholder. Set a valid key in environment or backend/.env")
+
     try:
         client = OpenAI(api_key=api_key)
         resp = client.chat.completions.create(
