@@ -54,7 +54,14 @@ class BaseIn(BaseModel):
 class TestCasesIn(BaseIn):
     requirement: str = Field(min_length=5)
 
-
+class TestCaseCreateIn(BaseModel):
+    project_id: int
+    requirement_id: int | None = None   # ✅ add this
+    title: str
+    description: str | None = None
+    preconditions: list[str] | None = None
+    steps: list[str] | None = None
+    expected_result: str | None = None
 class RiskIn(BaseIn):
     requirement: str = Field(min_length=5)
 
@@ -62,28 +69,6 @@ class RiskIn(BaseIn):
 class RegressionIn(BaseIn):
     change_description: str = Field(min_length=5)
     changed_components: Optional[list[str]] = None
-class RequestLogOut(BaseModel):
-    id: int
-    project_id: int
-    endpoint: str
-    input_text: str
-    output_text: str
-    created_at: str
-    user_id: Optional[int] = None
-    user_name: Optional[str] = None
-    group_name: Optional[str] = None
-
-
-class RequestLogCreateIn(BaseModel):
-    project_id: int
-    endpoint: str
-    input_text: str
-    output_text: str
-
-
-class RequestLogUpdateIn(BaseModel):
-    input_text: Optional[str] = None
-    output_text: Optional[str] = None
 
 class SummaryIn(BaseIn):
     test_results: str = Field(min_length=5)
@@ -97,11 +82,7 @@ class AIOut(BaseModel):
 
 
 # ---------- HISTORY ----------
-class HistoryItem(BaseModel):
-    id: int
-    project_id: int
-    endpoint: str
-    created_at: str
+# HistoryItem removed — history endpoints and RequestLog have been removed
 # ---------- USER ----------
 class UserMeOut(BaseModel):
     id: int
@@ -200,28 +181,40 @@ class RequirementPredictOut(BaseModel):
     probabilities: dict[str, float]   
 class RequirementCreateIn(BaseModel):
     project_id: int
-    text: str = Field(min_length=10)
+    title: str = Field(min_length=1, max_length=255)
+    description: str = Field(min_length=1)
+    acceptance_criteria: Optional[str] = None
+    source: Optional[str] = "manual"
+    external_id: Optional[str] = None
+
     # Optional test cases to create together with the requirement
-    # Each item should include title, optional description, steps and expected_result
+    # Each item may include: title, description, steps (list[str] or newline text), expected_result
     test_cases: Optional[List[dict]] = None
 
+
 class RequirementUpdateIn(BaseModel):
-    text: str = Field(min_length=10)
+    title: str = Field(min_length=1, max_length=255)
+    description: str = Field(min_length=1)
+    acceptance_criteria: Optional[str] = None
+    source: Optional[str] = None
+    external_id: Optional[str] = None
+
 
 class RequirementOut(BaseModel):
     id: int
     project_id: int
-    requirement_text: str
-    predicted_category: str
-    confidence: float
-    probabilities: Optional[dict[str, float]] = None
-    # Optionally include created test cases when the requirement was created
-    test_cases: Optional[List[dict]] = None
-    created_at: str    
+    title: str
+    description: str
+    acceptance_criteria: Optional[str] = None
+    source: str
+    external_id: Optional[str] = None
+    test_cases: List["TestCaseOut"] = []
+    created_at: str
 
-# ---------- GROUPS & PROJECT MEMBERS ----------
+# Add missing GroupCreateIn so other modules can import it
 class GroupCreateIn(BaseModel):
-    name: str = Field(min_length=2, max_length=120)
+    name: str = Field(min_length=2, max_length=150)
+    organization_id: Optional[int] = None
 
 class GroupOut(BaseModel):
     id: int
@@ -288,6 +281,8 @@ class TestCaseCreateIn(BaseModel):
     description: Optional[str] = None
     # steps can be submitted as a list of step strings
     steps: Optional[List[str]] = None
+    # optional preconditions can be a list of strings
+    preconditions: Optional[List[str]] = None
     expected_result: Optional[str] = None
 
 
@@ -297,6 +292,7 @@ class TestCaseOut(BaseModel):
     title: str
     description: Optional[str] = None
     steps: Optional[List[str]] = None
+    preconditions: Optional[List[str]] = None
     expected_result: Optional[str] = None
     priority: Optional[str] = None
     status: Optional[str] = None

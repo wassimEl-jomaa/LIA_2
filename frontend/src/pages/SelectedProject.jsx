@@ -13,9 +13,7 @@ export default function SelectedProject() {
 
   const [project, setProject] = useState(null);
 
-  const [history, setHistory] = useState([]);
   const [loadingProject, setLoadingProject] = useState(true);
-  const [loadingHistory, setLoadingHistory] = useState(true);
   const [projectMembers, setProjectMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
 
@@ -56,31 +54,6 @@ export default function SelectedProject() {
     }
   }
 
-  async function loadHistory() {
-    setError("");
-    setLoadingHistory(true);
-
-    try {
-      const res = await fetch(
-        `${API_BASE}/api/history?project_id=${encodeURIComponent(projectId)}&limit=200`,
-        {
-          headers: { Authorization: `Bearer ${getToken()}` },
-        }
-      );
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail || "Failed to load history");
-      }
-
-      const data = await res.json();
-      setHistory(Array.isArray(data) ? data : []);
-    } catch (err) {
-      setError(err.message || "Something went wrong");
-    } finally {
-      setLoadingHistory(false);
-    }
-  }
 
   async function loadProjectMembers() {
     setLoadingMembers(true);
@@ -104,7 +77,6 @@ export default function SelectedProject() {
 
   useEffect(() => {
     loadProject();
-    loadHistory();
     loadProjectMembers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -260,75 +232,7 @@ export default function SelectedProject() {
           )}
         </div>
 
-        {/* History card */}
-        <div className="bg-white rounded-2xl shadow border border-gray-100">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold text-gray-800">
-                Request History
-              </div>
-              <div className="text-xs text-gray-500">
-                All AI requests (RequestLog) for this project.
-              </div>
-            </div>
-
-            <div className="text-xs text-gray-500">
-              Total: <span className="font-semibold">{history.length}</span>
-            </div>
-          </div>
-
-          {loadingHistory ? (
-            <div className="p-6 text-sm text-gray-500">Loading history...</div>
-          ) : history.length === 0 ? (
-            <div className="p-6 text-sm text-gray-500">
-              No history yet. Generate something in Test Cases to create logs.
-            </div>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {history.map((h) => (
-                <li
-                  key={h.id}
-                  className="px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className={endpointBadge(h.endpoint)}>
-                        {h.endpoint}
-                      </span>
-                      <span className="text-sm font-semibold text-gray-900">
-                        Request #{h.id}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-xs text-gray-500">
-                      created_at: {h.created_at}
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    {/* ✅ NEW: View log details */}
-                    <button
-                      onClick={() =>
-                        navigate(`/projects/${projectId}/logs/${h.id}`)
-                      }
-                      className="rounded-md bg-white px-3 py-2 text-gray-800 text-sm font-semibold border border-gray-200 hover:bg-gray-50"
-                    >
-                      View details
-                    </button>
-
-                    {/* Keep if you want */}
-                    <button
-                      onClick={() => navigate("/testcases")}
-                      className="rounded-md bg-gray-100 px-3 py-2 text-gray-800 text-sm font-semibold hover:bg-gray-200"
-                      title="Go to Test Cases page"
-                    >
-                      Open Test Cases
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        {/* RequestHistory removed */}
       </div>
     </div>
   );

@@ -17,6 +17,7 @@ from .roles import router as roles_router
 from .users import router as users_router
 from .requirement import router as requirements_router
 from .test_cases import router as test_cases_router
+from .history import router as history_router
 from .groups import router as groups_router
 from .project_sharing import router as project_sharing_router
 from .ml import predict_category
@@ -24,9 +25,9 @@ from .schemas import RequirementPredictIn, RequirementPredictOut
 from .models import User, Project
 from .models import Requirement
 from .schemas import RequirementCreateIn, RequirementUpdateIn, RequirementOut
-from .schemas import TestCasesIn, RiskIn, RegressionIn, SummaryIn, AIOut, HistoryItem
+from .schemas import TestCasesIn, RiskIn, RegressionIn, SummaryIn, AIOut
 from .ai import call_ai_json, prompt_testcases, prompt_risk, prompt_regression, prompt_summary
-from .request_logs import router as request_logs_router, log_and_return
+
 
 # Load .env from backend/ directory (one level up from app/)
 env_path = Path(__file__).parent.parent / ".env"
@@ -56,7 +57,8 @@ app.include_router(requirements_router) # requires requirement.py
 app.include_router(groups_router)
 app.include_router(project_sharing_router)
 app.include_router(test_cases_router)
-app.include_router(request_logs_router)
+app.include_router(history_router)
+
 # DEBUG: show full traceback in Swagger when 500 happens
 @app.exception_handler(Exception)
 async def debug_exception_handler(request: Request, exc: Exception):
@@ -123,14 +125,7 @@ async def make_testcases(
     user_prompt = prompt_testcases(payload.requirement)
     raw, parsed = call_ai_json(user_prompt)
 
-    return await log_and_return(
-        db=db,
-        project_id=payload.project_id,
-        endpoint="testcases",
-        input_text=payload.requirement,
-        raw_text=raw,
-        parsed_json=parsed
-    )
+    return AIOut(parsed_json=parsed, raw_text=raw)
 
 
 @app.post("/api/risk", response_model=AIOut)
@@ -145,14 +140,7 @@ async def analyze_risk(
     user_prompt = prompt_risk(payload.requirement)
     raw, parsed = call_ai_json(user_prompt)
 
-    return await log_and_return(
-        db=db,
-        project_id=payload.project_id,
-        endpoint="risk",
-        input_text=payload.requirement,
-        raw_text=raw,
-        parsed_json=parsed
-    )
+    return AIOut(parsed_json=parsed, raw_text=raw)
 
 
 @app.post("/api/regression", response_model=AIOut)
@@ -171,14 +159,7 @@ async def suggest_regression(
     user_prompt = prompt_regression(payload.change_description, payload.changed_components)
     raw, parsed = call_ai_json(user_prompt)
 
-    return await log_and_return(
-        db=db,
-        project_id=payload.project_id,
-        endpoint="regression",
-        input_text=input_text,
-        raw_text=raw,
-        parsed_json=parsed
-    )
+    return AIOut(parsed_json=parsed, raw_text=raw)
 
 
 @app.post("/api/summary", response_model=AIOut)
@@ -197,14 +178,7 @@ async def summarize(
     user_prompt = prompt_summary(payload.test_results, payload.bug_reports)
     raw, parsed = call_ai_json(user_prompt)
 
-    return await log_and_return(
-        db=db,
-        project_id=payload.project_id,
-        endpoint="summary",
-        input_text=input_text,
-        raw_text=raw,
-        parsed_json=parsed
-    )
+    return AIOut(parsed_json=parsed, raw_text=raw)
 
 
 # =========================

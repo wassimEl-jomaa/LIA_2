@@ -1,30 +1,78 @@
-
 import { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { generateTestCases, predictRequirementCategory } from "../api";
+
+// Vite-safe API base (no "process is not defined")
+const API_BASE = (import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000").replace(/\/$/, "");
+
+async function apiFetch(path, options = {}) {
+  const token = sessionStorage.getItem("token") || localStorage.getItem("token") || null;
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: options.method || "GET",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+    body: options.body,
+  });
+
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok) {
+    const msg =
+      data?.detail
+        ? typeof data.detail === "string"
+          ? data.detail
+          : JSON.stringify(data.detail)
+        : text || "Request failed";
+    throw new Error(msg);
+  }
+
+  return data;
+}
+
+function buildRequirementTitle(text) {
+  const t = (text || "").trim();
+  if (!t) return "Requirement";
+  const firstLine = t.split("\n").find(Boolean) || t;
+  return firstLine.length > 80 ? `${firstLine.slice(0, 80)}…` : firstLine;
+}
 
 export default function TestCases() {
   const navigate = useNavigate();
 
   const [requirementText, setRequirementText] = useState("");
   const [loading, setLoading] = useState(false);
+
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
-  
-  // ML prediction state
+
+  // ML prediction
   const [prediction, setPrediction] = useState(null);
   const [predictLoading, setPredictLoading] = useState(false);
 
   // Feature tabs
-  const [feature, setFeature] = useState("testcases"); // testcases | risks | regression | summary
+  const [feature, setFeature] = useState("testcases");
 
   // Active project
   const [activeProjectId, setActiveProjectId] = useState(
     localStorage.getItem("active_project_id")
   );
 
+  // Optional UI feedback (saved ids)
+  const [savedRequirementId, setSavedRequirementId] = useState(null);
+  const [savedTestCaseIds, setSavedTestCaseIds] = useState([]);
+
   useEffect(() => {
-    // If user refreshes, ensure state stays in sync
     setActiveProjectId(localStorage.getItem("active_project_id"));
   }, []);
 
@@ -32,49 +80,98 @@ export default function TestCases() {
 
   function handleBack() {
     const pid = localStorage.getItem("active_project_id");
-    if (!pid) return navigate("/projects"); // fallback to MyProjects
+    if (!pid) return navigate("/projects");
     navigate(`/projects/${pid}`);
   }
 
   async function onGenerate() {
     setError("");
     setResult(null);
+    setSavedRequirementId(null);
+    setSavedTestCaseIds([]);
     setLoading(true);
 
     try {
-      if (!activeProjectId) {
-        throw new Error("No active project selected. Please select a project first.");
-      }
+      if (!activeProjectId) throw new Error("No active project selected. Please select a project first.");
+      if (!requirementText.trim()) throw new Error("Please write a requirement first.");
 
+      const projectId = Number(activeProjectId);
+      if (!Number.isFinite(projectId)) throw new Error("Invalid project id.");
+
+      // 1) ✅ Save requirement FIRST
+      const requirementPayload = {
+        project_id: projectId,
+        title: buildRequirementTitle(requirementText),
+        description: requirementText.trim(),
+        // acceptance_criteria: null, // add if your schema supports it
+        // source: "manual",
+      };
+
+      const createdRequirement = await apiFetch("/api/requirements", {
+        method: "POST",
+        body: JSON.stringify(requirementPayload),
+      });
+
+      const requirementId = createdRequirement?.id;
+      if (!requirementId) throw new Error("Requirement saved but API did not return an id.");
+
+      setSavedRequirementId(requirementId);
+
+      // 2) Generate test cases with AI
       const context = { domain: "Automotive/Railway" };
-
-      if (feature === "testcases") {
-        const data = await generateTestCases({
-          requirementText,
-          context: { ...context, style: "manual test cases" },
-        });
-        
-        // Backend returns AIOut with parsed_json containing the actual data
-        const jsonData = data.parsed_json || {};
-        
-        // Transform to match frontend expected format
-        setResult({
-          testCases: (jsonData.test_cases || []).map(tc => ({
-            title: tc.title,
-            priority: tc.priority,
-            preconditions: tc.preconditions || [],
-            steps: tc.steps || [],
-            expected: tc.expected,
-            type: tc.type
-          })),
-          missingInfo: jsonData.assumptions || jsonData.open_questions || [],
-          notes: jsonData.notes || []
-        });
-      }
 
       if (feature !== "testcases") {
         throw new Error("This feature is planned (backend not ready yet).");
       }
+
+      const ai = await generateTestCases({
+        requirementText,
+        context: { ...context, style: "manual test cases" },
+      });
+
+      const jsonData = ai.parsed_json || {};
+      const generated = (jsonData.test_cases || []).map((tc) => ({
+        title: tc.title,
+        priority: tc.priority || "medium",
+        preconditions: tc.preconditions || [],
+        steps: tc.steps || [],
+        expected: tc.expected,
+        type: tc.type,
+        description: tc.description || null,
+      }));
+
+      // Show in UI immediately
+      setResult({
+        testCases: generated,
+        missingInfo: jsonData.assumptions || jsonData.open_questions || [],
+        notes: jsonData.notes || [],
+      });
+
+      // 3) ✅ Save test cases SECOND (linked to requirement_id)
+      const createdIds = [];
+      for (const tc of generated) {
+        const tcPayload = {
+          project_id: projectId,
+          requirement_id: requirementId, // ✅ link to the saved requirement
+          title: tc.title,
+          description: tc.description || null,
+          preconditions: tc.preconditions || [],
+          steps: tc.steps || [],
+          expected_result: tc.expected || null,
+          // priority/status can be added only if your TestCaseCreateIn accepts them
+          // priority: tc.priority || "medium",
+          // status: "active",
+        };
+
+        const createdTc = await apiFetch("/api/test_cases", {
+          method: "POST",
+          body: JSON.stringify(tcPayload),
+        });
+
+        if (createdTc?.id) createdIds.push(createdTc.id);
+      }
+
+      setSavedTestCaseIds(createdIds);
     } catch (e) {
       setError(e?.message || "Something went wrong");
     } finally {
@@ -84,7 +181,7 @@ export default function TestCases() {
 
   async function onClassifyRequirement() {
     if (!requirementText.trim()) return;
-    
+
     setError("");
     setPredictLoading(true);
 
@@ -139,6 +236,8 @@ Acceptance criteria:
           setFeature(id);
           setResult(null);
           setError("");
+          setSavedRequirementId(null);
+          setSavedTestCaseIds([]);
         }}
         className={
           active
@@ -154,25 +253,23 @@ Acceptance criteria:
   return (
     <div className="min-h-[calc(100vh-56px)] bg-gradient-to-b from-slate-50 via-white to-slate-50 px-4 py-8">
       <div className="mx-auto max-w-6xl space-y-6">
-        {/* Top header card */}
         <div className="relative overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.08),transparent_45%),radial-gradient(circle_at_80%_0%,rgba(14,165,233,0.08),transparent_35%)]" />
           <div className="relative p-6">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div className="space-y-2">
-                
                 <h1 className="text-3xl font-bold text-slate-900">Test Cases</h1>
                 <p className="text-sm text-slate-600 max-w-2xl">
-                  Turn requirements into structured, high-value test cases. Classify scope, generate cases, and copy results in one place.
+                  Write a requirement, generate test cases, and we’ll save both automatically.
                 </p>
-                <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 font-semibold">
-                    Active project: <span className="text-slate-900">{activeProjectId || "None"}</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 font-semibold">
-                    Characters: <span className="text-slate-900">{charCount}</span>
-                  </span>
-                </div>
+
+                {(savedRequirementId || savedTestCaseIds.length > 0) && (
+                  <div className="mt-3 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                    Saved ✅ Requirement ID: <b>{savedRequirementId}</b>
+                    {savedTestCaseIds.length > 0 && (
+                      <> · Test cases saved: <b>{savedTestCaseIds.length}</b></>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-2 justify-end">
@@ -204,7 +301,6 @@ Acceptance criteria:
               </div>
             </div>
 
-            {/* Feature tabs */}
             <div className="mt-5 flex flex-wrap gap-2">
               <FeatureButton id="testcases" label="Requirements → Test Cases" />
               <FeatureButton id="risks" label="Risk Areas (Soon)" />
@@ -226,12 +322,10 @@ Acceptance criteria:
           </div>
         </div>
 
-        {/* Two-column layout */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Input card */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-800">Write your krave </div>
+              <div className="text-sm font-semibold text-slate-800">Write your krave</div>
               <div className="text-xs text-slate-500">{charCount} chars</div>
             </div>
 
@@ -245,60 +339,6 @@ Acceptance criteria:
               placeholder="Paste requirement / user story here..."
               className="mt-3 w-full rounded-xl border border-slate-200 p-3 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-slate-50/50"
             />
-
-            {/* ML Prediction Display */}
-            {prediction && (
-              <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold text-green-900">
-                    🎯 ML Classification Result
-                  </div>
-                  <button
-                    onClick={() => setPrediction(null)}
-                    className="text-green-700 hover:text-green-900 text-xs"
-                  >
-                    ✕
-                  </button>
-                </div>
-                
-                <div className="mt-3">
-                  <div className="text-base font-bold text-green-900">
-                    Category: {prediction.predicted_category}
-                  </div>
-                  <div className="text-sm text-green-800 mt-1">
-                    Confidence: {(prediction.confidence * 100).toFixed(2)}%
-                  </div>
-                </div>
-
-                {prediction.probabilities && (
-                  <div className="mt-4">
-                    <div className="text-xs font-semibold text-green-900 mb-2">
-                      All Categories:
-                    </div>
-                    <div className="space-y-1">
-                      {Object.entries(prediction.probabilities)
-                        .sort(([, a], [, b]) => b - a)
-                        .map(([category, prob]) => (
-                          <div key={category} className="flex items-center gap-2">
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between text-xs text-green-800">
-                                <span>{category}</span>
-                                <span className="font-mono">{(prob * 100).toFixed(2)}%</span>
-                              </div>
-                              <div className="mt-1 h-1.5 bg-green-200 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-green-600 rounded-full"
-                                  style={{ width: `${prob * 100}%` }}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
 
             <div className="mt-4 flex flex-wrap gap-2">
               <button
@@ -325,7 +365,7 @@ Acceptance criteria:
                 className="rounded-md bg-blue-700 px-4 py-2 text-white font-semibold hover:bg-blue-800 disabled:opacity-60"
                 title={!activeProjectId ? "Select a project first" : ""}
               >
-                {loading ? "Generating..." : "Generate"}
+                {loading ? "Generating & saving..." : "Generate"}
               </button>
 
               <button
@@ -334,6 +374,8 @@ Acceptance criteria:
                   setResult(null);
                   setError("");
                   setPrediction(null);
+                  setSavedRequirementId(null);
+                  setSavedTestCaseIds([]);
                 }}
                 type="button"
                 className="rounded-md bg-white px-4 py-2 font-semibold text-gray-800 border border-gray-200 hover:bg-gray-50"
@@ -343,31 +385,15 @@ Acceptance criteria:
             </div>
           </div>
 
-          {/* Output card */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-slate-800">Test cases</div>
-              {loading && (
-                <div className="text-xs text-slate-500">Generating…</div>
-              )}
+              {loading && <div className="text-xs text-slate-500">Working…</div>}
             </div>
 
             {!result && !loading && (
               <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
                 Generated output will appear here.
-              </div>
-            )}
-
-            {loading && (
-              <div className="mt-4 grid gap-3">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className="animate-pulse rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2">
-                    <div className="h-4 w-1/2 bg-slate-200 rounded" />
-                    <div className="h-3 w-2/3 bg-slate-200 rounded" />
-                    <div className="h-3 w-5/6 bg-slate-200 rounded" />
-                    <div className="h-3 w-3/4 bg-slate-200 rounded" />
-                  </div>
-                ))}
               </div>
             )}
 
@@ -378,22 +404,15 @@ Acceptance criteria:
                 </div>
 
                 {result.testCases?.map((tc, idx) => (
-                  <div
-                    key={idx}
-                    className="rounded-xl border border-slate-200 bg-slate-50 p-4"
-                  >
+                  <div key={idx} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div className="font-semibold text-slate-900">
                       {tc.title}{" "}
-                      <span className="font-normal text-slate-500">
-                        — {tc.priority}
-                      </span>
+                      <span className="font-normal text-slate-500">— {tc.priority}</span>
                     </div>
 
                     {!!tc.preconditions?.length && (
                       <div className="mt-3">
-                        <div className="text-sm font-semibold text-slate-700">
-                          Preconditions
-                        </div>
+                        <div className="text-sm font-semibold text-slate-700">Preconditions</div>
                         <ul className="list-disc pl-5 text-sm text-slate-700">
                           {tc.preconditions.map((p, i) => (
                             <li key={i}>{p}</li>
@@ -404,9 +423,7 @@ Acceptance criteria:
 
                     {!!tc.steps?.length && (
                       <div className="mt-3">
-                        <div className="text-sm font-semibold text-slate-700">
-                          Steps
-                        </div>
+                        <div className="text-sm font-semibold text-slate-700">Steps</div>
                         <ol className="list-decimal pl-5 text-sm text-slate-700">
                           {tc.steps.map((s, i) => (
                             <li key={i}>{s}</li>
@@ -416,24 +433,10 @@ Acceptance criteria:
                     )}
 
                     <div className="mt-3 text-sm text-slate-700">
-                      <span className="font-semibold">Expected:</span>{" "}
-                      {tc.expected}
+                      <span className="font-semibold">Expected:</span> {tc.expected}
                     </div>
                   </div>
                 ))}
-
-                {!!result.missingInfo?.length && (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
-                    <div className="font-semibold text-amber-900">
-                      Missing info
-                    </div>
-                    <ul className="mt-2 list-disc pl-5 text-amber-900">
-                      {result.missingInfo.map((m, i) => (
-                        <li key={i}>{m}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </div>
             )}
           </div>

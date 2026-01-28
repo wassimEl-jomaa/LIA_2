@@ -8,9 +8,9 @@ import Register from "./pages/Register";
 import MyProjects from "./pages/MyProjects";
 import CreateProject from "./pages/CreateProject";
 import SelectedProject from "./pages/SelectedProject";
-import RequestLogDetails from "./pages/RequestLogDetails";
 import ExecuteTestCases from "./pages/ExecuteTestCases";
 import ManageProject from "./pages/ManageProject";
+import ManageTestCases from "./pages/ManageTestCases";
 export default function App() {
   return (
     <>
@@ -29,8 +29,9 @@ export default function App() {
           <Route path="/projects/new" element={<CreateProject />} />
           <Route path="/projects/:projectId" element={<SelectedProject />} />
           <Route path="/projects/:projectId/manage" element={<ManageProject />} />
-          <Route path="/projects/:projectId/logs/:logId" element={<RequestLogDetails />} />
-          <Route path="/projects/:projectId/logs/:logId/execute" element={<ExecuteTestCases />} />
+          <Route path="/projects/:projectId/testcases" element={<ManageTestCases />} />
+          <Route path="/projects/:projectId/testcases/*" element={<ManageTestCases />} />
+          {/* RequestLog/history UI removed */}
         </Routes>
       </main>
     </>
