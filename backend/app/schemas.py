@@ -329,3 +329,41 @@ class TestExecutionOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ---------- REQUIREMENT ANALYSIS ----------
+
+class RequirementAnalysisCreateIn(BaseModel):
+    requirement_id: int
+    summary: Optional[str] = None
+    category: Optional[str] = None
+    risk_level: Optional[str] = None
+    recommendations: Optional[str] = None
+
+class RequirementAnalysisIn(BaseModel):
+    project_id: int
+    requirement: str = Field(min_length=5)
+    context: Optional[dict] = None  # optional extra info
+
+
+class RequirementRiskItem(BaseModel):
+    risk: str
+    severity: Literal["low", "medium", "high", "critical"]
+    why_it_matters: str
+    mitigation_or_tests: List[str] = []
+
+
+class RequirementAnalysisOut(BaseModel):
+    id: int
+    requirement_id: int
+    created_by_user_id: Optional[int] = None
+
+    summary: Optional[str] = None
+    category: Optional[str] = None
+    risk_level: Optional[str] = None
+    recommendations: Optional[str] = None
+
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

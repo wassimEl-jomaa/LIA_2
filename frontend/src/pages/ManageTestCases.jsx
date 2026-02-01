@@ -10,6 +10,7 @@ import {
   createTestCase,
   updateTestCase,
   deleteTestCase,
+  analyzeRequirement,
 } from "../api";
 
 // Vite-safe base (and avoids hardcoding)
@@ -98,6 +99,10 @@ export default function ManageTestCases() {
   const [loadingList, setLoadingList] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // analysis state
+  const [analysis, setAnalysis] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState("");
 
   const [query, setQuery] = useState("");
 
@@ -130,6 +135,22 @@ export default function ManageTestCases() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, requirementId]);
 
+  async function runAnalysis() {
+  setAnalysisLoading(true);
+  setAnalysisError("");
+  try {
+    const res = await analyzeRequirement({
+      project_id: Number(projectId),
+      requirement: requirement?.title || "", // or full requirement text
+      context: { page: "ManageTestCases" },
+    });
+    setAnalysis(res);
+  } catch (e) {
+    setAnalysisError(e.message || String(e));
+  } finally {
+    setAnalysisLoading(false);
+  }
+}
   async function loadRequirement() {
     setLoadingRequirement(true);
     setRequirementError("");
@@ -330,6 +351,7 @@ export default function ManageTestCases() {
                 >
                   ← Back
                 </button>
+                
 
                 <button
                   onClick={fetchList}

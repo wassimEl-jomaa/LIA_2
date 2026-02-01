@@ -1,4 +1,5 @@
 from sqlalchemy import Boolean, String, Text, DateTime, UniqueConstraint, func, Integer, ForeignKey
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 
@@ -300,6 +301,9 @@ class RequirementAnalysis(Base):
     risk_level: Mapped[str | None] = mapped_column(String(50), nullable=True)
     recommendations: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # ⭐ store full AI output here (recommended)
+    raw_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -312,7 +316,6 @@ class RequirementAnalysis(Base):
         back_populates="created_requirement_analyses",
         foreign_keys=[created_by_user_id],
     )
-
 
 
 # =========================

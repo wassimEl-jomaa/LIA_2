@@ -72,7 +72,12 @@ export async function createTestCase(payload) {
   }
   return r.json();
 }
-
+export async function analyzeRequirement(payload) {
+  return apiRequest("/api/requirements/analysis", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
 export async function updateTestCase(testCaseId, payload) {
   const token = localStorage.getItem("token");
   if (!token) throw new Error("Authentication required. Please login first.");

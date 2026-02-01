@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, text
 from dotenv import load_dotenv
 import os
 from pathlib import Path
@@ -19,6 +19,7 @@ from .requirement import router as requirements_router
 from .test_cases import router as test_cases_router
 from .history import router as history_router
 from .groups import router as groups_router
+from .requirement_analysis import router as requirement_analysis_router
 from .project_sharing import router as project_sharing_router
 from .ml import predict_category
 from .schemas import RequirementPredictIn, RequirementPredictOut
@@ -58,7 +59,7 @@ app.include_router(groups_router)
 app.include_router(project_sharing_router)
 app.include_router(test_cases_router)
 app.include_router(history_router)
-
+app.include_router(requirement_analysis_router)
 # DEBUG: show full traceback in Swagger when 500 happens
 @app.exception_handler(Exception)
 async def debug_exception_handler(request: Request, exc: Exception):
@@ -72,6 +73,14 @@ async def on_startup():
     # Create tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Ensure new columns exist (lightweight migration)
+        try:
+            await conn.execute(
+                text("ALTER TABLE requirement_analyses ADD COLUMN IF NOT EXISTS raw_json JSONB")
+            )
+        except Exception as exc:
+            # Don't block startup if DB is not Postgres or table doesn't exist yet
+            print(f"[startup] raw_json column check skipped: {exc}")
 
     if not os.getenv("OPENAI_API_KEY"):
         print("WARNING: OPENAI_API_KEY is not set. Endpoints will fail until it is set.")

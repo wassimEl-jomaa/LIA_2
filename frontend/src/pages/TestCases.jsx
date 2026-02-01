@@ -47,6 +47,19 @@ function buildRequirementTitle(text) {
   return firstLine.length > 80 ? `${firstLine.slice(0, 80)}…` : firstLine;
 }
 
+function Pill({ children, tone = "slate" }) {
+  const base = "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold border";
+  const tones = {
+    slate: "bg-slate-50 text-slate-700 border-slate-200",
+    blue: "bg-blue-50 text-blue-700 border-blue-200",
+    green: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    amber: "bg-amber-50 text-amber-800 border-amber-200",
+    rose: "bg-rose-50 text-rose-700 border-rose-200",
+    purple: "bg-purple-50 text-purple-700 border-purple-200",
+  };
+  return <span className={`${base} ${tones[tone] || tones.slate}`}>{children}</span>;
+}
+
 export default function TestCases() {
   const navigate = useNavigate();
 
@@ -60,13 +73,15 @@ export default function TestCases() {
   const [prediction, setPrediction] = useState(null);
   const [predictLoading, setPredictLoading] = useState(false);
 
+  // Requirement analysis (AI)
+  const [analysis, setAnalysis] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+
   // Feature tabs
   const [feature, setFeature] = useState("testcases");
 
   // Active project
-  const [activeProjectId, setActiveProjectId] = useState(
-    localStorage.getItem("active_project_id")
-  );
+  const [activeProjectId, setActiveProjectId] = useState(localStorage.getItem("active_project_id"));
 
   // Optional UI feedback (saved ids)
   const [savedRequirementId, setSavedRequirementId] = useState(null);
@@ -84,38 +99,49 @@ export default function TestCases() {
     navigate(`/projects/${pid}`);
   }
 
+  // ✅ helper: ensure requirement exists (save if needed)
+  async function ensureRequirementSaved() {
+    if (!activeProjectId) throw new Error("No active project selected. Please select a project first.");
+    if (!requirementText.trim()) throw new Error("Please write a requirement first.");
+
+    // already saved in this session
+    if (savedRequirementId) return savedRequirementId;
+
+    const projectId = Number(activeProjectId);
+    if (!Number.isFinite(projectId)) throw new Error("Invalid project id.");
+
+    const requirementPayload = {
+      project_id: projectId,
+      title: buildRequirementTitle(requirementText),
+      description: requirementText.trim(),
+    };
+
+    const createdRequirement = await apiFetch("/api/requirements", {
+      method: "POST",
+      body: JSON.stringify(requirementPayload),
+    });
+
+    const requirementId = createdRequirement?.id;
+    if (!requirementId) throw new Error("Requirement saved but API did not return an id.");
+
+    setSavedRequirementId(requirementId);
+    return requirementId;
+  }
+
   async function onGenerate() {
     setError("");
     setResult(null);
+    setAnalysis(null);
     setSavedRequirementId(null);
     setSavedTestCaseIds([]);
     setLoading(true);
 
     try {
-      if (!activeProjectId) throw new Error("No active project selected. Please select a project first.");
-      if (!requirementText.trim()) throw new Error("Please write a requirement first.");
-
       const projectId = Number(activeProjectId);
       if (!Number.isFinite(projectId)) throw new Error("Invalid project id.");
 
       // 1) ✅ Save requirement FIRST
-      const requirementPayload = {
-        project_id: projectId,
-        title: buildRequirementTitle(requirementText),
-        description: requirementText.trim(),
-        // acceptance_criteria: null, // add if your schema supports it
-        // source: "manual",
-      };
-
-      const createdRequirement = await apiFetch("/api/requirements", {
-        method: "POST",
-        body: JSON.stringify(requirementPayload),
-      });
-
-      const requirementId = createdRequirement?.id;
-      if (!requirementId) throw new Error("Requirement saved but API did not return an id.");
-
-      setSavedRequirementId(requirementId);
+      const requirementId = await ensureRequirementSaved();
 
       // 2) Generate test cases with AI
       const context = { domain: "Automotive/Railway" };
@@ -140,7 +166,6 @@ export default function TestCases() {
         description: tc.description || null,
       }));
 
-      // Show in UI immediately
       setResult({
         testCases: generated,
         missingInfo: jsonData.assumptions || jsonData.open_questions || [],
@@ -152,13 +177,13 @@ export default function TestCases() {
       for (const tc of generated) {
         const tcPayload = {
           project_id: projectId,
-          requirement_id: requirementId, // ✅ link to the saved requirement
+          requirement_id: requirementId,
           title: tc.title,
           description: tc.description || null,
           preconditions: tc.preconditions || [],
           steps: tc.steps || [],
           expected_result: tc.expected || null,
-          // priority/status can be added only if your TestCaseCreateIn accepts them
+          // priority/status can be added if backend supports it
           // priority: tc.priority || "medium",
           // status: "active",
         };
@@ -176,6 +201,29 @@ export default function TestCases() {
       setError(e?.message || "Something went wrong");
     } finally {
       setLoading(false);
+    }
+  }
+
+  // ✅ NEW: Analyze requirement
+  async function onAnalyzeRequirement() {
+    setError("");
+    setAnalysis(null);
+    setAnalysisLoading(true);
+
+    try {
+      const requirementId = await ensureRequirementSaved();
+
+      // assumes you have: POST /api/requirement_analyses  { requirement_id }
+      const data = await apiFetch("/api/requirement_analyses", {
+        method: "POST",
+        body: JSON.stringify({ requirement_id: Number(requirementId) }),
+      });
+
+      setAnalysis(data);
+    } catch (e) {
+      setError(e?.message || "Requirement analysis failed");
+    } finally {
+      setAnalysisLoading(false);
     }
   }
 
@@ -235,6 +283,7 @@ Acceptance criteria:
         onClick={() => {
           setFeature(id);
           setResult(null);
+          setAnalysis(null);
           setError("");
           setSavedRequirementId(null);
           setSavedTestCaseIds([]);
@@ -268,6 +317,14 @@ Acceptance criteria:
                     {savedTestCaseIds.length > 0 && (
                       <> · Test cases saved: <b>{savedTestCaseIds.length}</b></>
                     )}
+                  </div>
+                )}
+
+                {/* Optional: show ML prediction */}
+                {prediction && (
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    <Pill tone="purple">Category: {prediction.predicted_category}</Pill>
+                    <Pill tone="slate">Confidence: {(prediction.confidence * 100).toFixed(0)}%</Pill>
                   </div>
                 )}
               </div>
@@ -323,6 +380,7 @@ Acceptance criteria:
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* LEFT */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-slate-800">Write your krave</div>
@@ -334,6 +392,7 @@ Acceptance criteria:
               onChange={(e) => {
                 setRequirementText(e.target.value);
                 setPrediction(null);
+                setAnalysis(null);
               }}
               rows={12}
               placeholder="Paste requirement / user story here..."
@@ -358,6 +417,17 @@ Acceptance criteria:
                 {predictLoading ? "Classifying..." : "🤖 Classify (ML)"}
               </button>
 
+              {/* ✅ NEW BUTTON */}
+              <button
+                onClick={onAnalyzeRequirement}
+                disabled={analysisLoading || !requirementText.trim() || !activeProjectId}
+                type="button"
+                className="rounded-md bg-purple-600 px-4 py-2 text-white font-semibold hover:bg-purple-700 disabled:opacity-60"
+                title={!activeProjectId ? "Select a project first" : ""}
+              >
+                {analysisLoading ? "Analyzing..." : "🔎 Analyze Requirement"}
+              </button>
+
               <button
                 onClick={onGenerate}
                 disabled={loading || !requirementText.trim() || !activeProjectId}
@@ -372,6 +442,7 @@ Acceptance criteria:
                 onClick={() => {
                   setRequirementText("");
                   setResult(null);
+                  setAnalysis(null);
                   setError("");
                   setPrediction(null);
                   setSavedRequirementId(null);
@@ -385,20 +456,74 @@ Acceptance criteria:
             </div>
           </div>
 
+          {/* RIGHT */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-800">Test cases</div>
-              {loading && <div className="text-xs text-slate-500">Working…</div>}
+              <div className="text-sm font-semibold text-slate-800">Output</div>
+              {(loading || analysisLoading) && <div className="text-xs text-slate-500">Working…</div>}
             </div>
 
-            {!result && !loading && (
+            {!analysis && !result && !loading && !analysisLoading && (
               <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
                 Generated output will appear here.
               </div>
             )}
 
-            {result && (
+            {/* ✅ Requirement Analysis */}
+            {analysis && (
               <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-purple-800">Requirement analysis</div>
+                  <div className="flex gap-2">
+                    {savedRequirementId && (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/projects/${activeProjectId}`)}
+                        className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 border border-slate-200 hover:bg-slate-50"
+                      >
+                        View in project
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    {analysis.category && <Pill tone="purple">Category: {analysis.category}</Pill>}
+                    {analysis.risk_level && <Pill tone="amber">Risk: {analysis.risk_level}</Pill>}
+                    {analysis.created_at && <Pill tone="slate">Created: {new Date(analysis.created_at).toLocaleString()}</Pill>}
+                  </div>
+
+                  {analysis.summary && (
+                    <div className="text-sm text-slate-800">
+                      <div className="font-semibold text-slate-700 mb-1">Summary</div>
+                      <div className="whitespace-pre-wrap">{analysis.summary}</div>
+                    </div>
+                  )}
+
+                  {analysis.recommendations && (
+                    <div className="text-sm text-slate-800">
+                      <div className="font-semibold text-slate-700 mb-1">Recommendations</div>
+                      <div className="whitespace-pre-wrap">{analysis.recommendations}</div>
+                    </div>
+                  )}
+
+                  {/* If you store raw_json and return it */}
+                  {analysis.raw_json && (
+                    <details className="text-sm">
+                      <summary className="cursor-pointer font-semibold text-slate-700">Raw JSON</summary>
+                      <pre className="mt-2 overflow-auto rounded-lg bg-white p-3 text-xs border border-slate-200">
+                        {JSON.stringify(analysis.raw_json, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ✅ Test cases result */}
+            {result && (
+              <div className="mt-6 space-y-3">
                 <div className="text-sm font-semibold text-blue-800">
                   Test cases ({result.testCases?.length || 0})
                 </div>

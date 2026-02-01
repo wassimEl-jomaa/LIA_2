@@ -17,9 +17,19 @@ else:
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 
 SYSTEM_BASE = """You are a senior QA engineer and test lead.
-You help with test design, risk-based testing, regression selection, and reporting.
-You MUST output valid JSON only. No markdown, no extra text.
-If you are unsure, still output JSON with best effort and include a field "assumptions".
+You design actionable, realistic test cases.
+
+Rules:
+- Output VALID JSON ONLY (no markdown, no comments, no extra text).
+- Use the exact keys requested. Do not invent new keys.
+- Steps must be a list of short, imperative actions (no long paragraphs).
+- Preconditions must be a list (may be empty).
+- expected_result must be a single string.
+- priority must be one of: "low", "medium", "high", "critical".
+- status must be one of: "active", "draft", "inactive", "deprecated".
+- type must be one of: "Functional", "Negative", "Boundary", "Regression", "Security", "Performance".
+- Ensure titles are unique within the response.
+- If requirement is unclear, include assumptions and open_questions, but still produce best-effort test cases.
 """
 
 def _try_parse_json(text: str) -> Optional[Any]:
@@ -50,7 +60,7 @@ def call_ai_json(user_prompt: str) -> Tuple[str, Optional[Any]]:
               "title": "Mocked test case",
               "preconditions": [],
               "steps": ["Step 1: Do something"],
-              "expected": "Expected behavior",
+              "expected_result": "Expected behavior",
               "priority": "Medium",
               "type": "Functional",
             }
@@ -169,28 +179,42 @@ def call_ai_json(user_prompt: str) -> Tuple[str, Optional[Any]]:
 
 def prompt_testcases(requirement: str) -> str:
     return f"""
-Create high-quality test cases from this requirement:
+Generate a compact, high-quality test suite from the requirement below.
 
-REQUIREMENT:
+REQUIREMENT (user story / spec):
 {requirement}
 
-Return JSON with:
+CONSTRAINTS:
+- Create 8–15 test cases unless the requirement is tiny (then at least 5).
+- Include a mix: Functional + Negative + Boundary (and Security/Performance when relevant).
+- Prefer end-to-end user flows, but add API/validation cases if implied (email formats, rate limits, token expiry, etc.).
+- Do not repeat the same test case idea with different wording.
+
+OUTPUT JSON EXACTLY in this schema:
 {{
   "test_cases": [
     {{
-      "id": "TC-001",
-      "title": "...",
-      "preconditions": ["..."],
-      "steps": ["..."],
-      "expected": "...",
-      "priority": "High|Medium|Low",
+      "title": "string (unique, short)",
+      "description": "string|null (one sentence why/what)",
+      "preconditions": ["string", "..."],
+      "steps": ["string", "..."],
+      "expected_result": "string",
+      "priority": "low|medium|high|critical",
+      "status": "active",
       "type": "Functional|Negative|Boundary|Regression|Security|Performance"
     }}
   ],
-  "notes": ["..."],
-  "assumptions": ["..."]
+  "notes": ["string", "..."],
+  "open_questions": ["string", "..."],
+  "assumptions": ["string", "..."]
 }}
+
+SELF-CHECK BEFORE RESPONDING:
+- JSON parses
+- Every test case has title, steps(list), expected_result
+- priority/status/type values match allowed enums
 """
+
 
 def prompt_risk(requirement: str) -> str:
     return f"""
@@ -273,4 +297,42 @@ Return JSON with:
   "next_steps": ["..."],
   "assumptions": ["..."]
 }}
+"""
+def prompt_requirement_analysis(requirement: str, context: Optional[dict] = None) -> str:
+    context_block = ""
+    if context:
+        context_block = "CONTEXT (use if relevant):\n" + json.dumps(context, ensure_ascii=False, indent=2) + "\n"
+
+    return f"""
+Analyze this requirement like a QA test lead. Find ambiguity, missing info, edge cases, security/privacy concerns, and acceptance criteria gaps.
+
+{context_block}
+REQUIREMENT:
+{requirement}
+
+OUTPUT VALID JSON ONLY in EXACT schema:
+{{
+  "summary": "string",
+  "actors": ["string", "..."],
+  "in_scope": ["string", "..."],
+  "out_of_scope": ["string", "..."],
+  "assumptions": ["string", "..."],
+  "open_questions": ["string", "..."],
+  "acceptance_criteria_suggested": ["string", "..."],
+  "risks": [
+    {{
+      "risk": "string",
+      "severity": "low|medium|high|critical",
+      "why_it_matters": "string",
+      "mitigation_or_tests": ["string", "..."]
+    }}
+  ],
+  "edge_cases": ["string", "..."],
+  "data_validation_rules": ["string", "..."],
+  "security_privacy": ["string", "..."]
+}}
+
+SELF-CHECK:
+- JSON parses
+- severity values are only low/medium/high/critical
 """
