@@ -18,7 +18,6 @@ router = APIRouter(prefix="/api/test_cases", tags=["test_cases"])
 def _tc_to_out(t: TestCase) -> TestCaseOut:
     steps_list = None
     if getattr(t, "steps", None):
-        # prefer JSON-encoded arrays, fall back to newline-separated text
         try:
             parsed = json.loads(t.steps)
             if isinstance(parsed, list):
@@ -42,6 +41,7 @@ def _tc_to_out(t: TestCase) -> TestCaseOut:
     return TestCaseOut(
         id=t.id,
         project_id=t.project_id,
+        requirement_id=t.requirement_id,  # ✅ ADD THIS LINE
         title=t.title,
         description=t.description,
         steps=steps_list,
@@ -51,7 +51,33 @@ def _tc_to_out(t: TestCase) -> TestCaseOut:
         status=t.status,
         created_at=str(t.created_at),
     )
+@router.get("/by_requirement/{requirement_id}", response_model=list[TestCaseOut])
+async def list_test_cases_by_requirement(
+    requirement_id: int,
+    project_id: int,
+    limit: int = 200,
+    db: AsyncSession = Depends(get_db),
+    user: Any = Depends(get_current_user),
+):
+    # Ensure the user can view this project
+    await ensure_project_access(db, project_id, user.id, allow_view=True)
 
+    limit = max(1, min(limit, 200))
+
+    stmt = (
+        select(TestCase)
+        .where(
+            and_(
+                TestCase.project_id == project_id,
+                TestCase.requirement_id == requirement_id,
+            )
+        )
+        .order_by(desc(TestCase.id))
+        .limit(limit)
+    )
+
+    rows = (await db.execute(stmt)).scalars().all()
+    return [_tc_to_out(r) for r in rows]
 
 @router.post("", response_model=TestCaseOut)
 async def create_test_case(

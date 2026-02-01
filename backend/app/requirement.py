@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from sqlalchemy.exc import SQLAlchemyError
-
+from sqlalchemy.orm import selectinload
+from typing import Any
 from .permissions import ensure_project_access
 from .db import get_db
 from .models import Requirement, TestCase, User
@@ -58,13 +59,14 @@ async def create_requirement(
     await ensure_project_access(db, payload.project_id, user.id, allow_view=False)
 
     req = Requirement(
-        project_id=payload.project_id,
-        title=payload.title,
-        description=payload.description,
-        acceptance_criteria=payload.acceptance_criteria,
-        source=payload.source or "manual",
-        external_id=payload.external_id,
-    )
+    project_id=payload.project_id,
+    title=payload.title,
+    description=payload.description,
+    acceptance_criteria=payload.acceptance_criteria,
+    source=payload.source or "manual",
+    external_id=payload.external_id,
+    created_by_user_id=user.id,  # ✅ IMPORTANT
+)
     db.add(req)
     await db.commit()
     await db.refresh(req)
@@ -150,27 +152,32 @@ async def get_requirement(
 
 
 @router.get("", response_model=list[RequirementOut])
-async def list_requirements(
-    project_id: int,
-    limit: int = 50,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
+async def list_requirements(project_id: int, limit: int = 200, db: AsyncSession = Depends(get_db), user: Any = Depends(get_current_user)):
     await ensure_project_access(db, project_id, user.id, allow_view=True)
-    limit = max(1, min(limit, 200))
+
+    limit = max(1, min(limit, 500))
 
     stmt = (
         select(Requirement)
         .where(Requirement.project_id == project_id)
+        .options(selectinload(Requirement.created_by_user))  # ✅ now works
         .order_by(desc(Requirement.id))
         .limit(limit)
     )
+
     rows = (await db.execute(stmt)).scalars().all()
 
-    # If you want test_cases in list view, you'd need extra queries.
-    # For now, return requirements with empty test_cases to keep list fast.
-    return [_req_to_out(r, test_cases=[]) for r in rows]
-
+    return [
+        RequirementOut(
+            id=r.id,
+            project_id=r.project_id,
+            title=r.title,
+            created_at=str(r.created_at),
+            created_by_user_id=r.created_by_user_id,
+            created_by_name=(r.created_by_user.name if r.created_by_user else None),
+        )
+        for r in rows
+    ]
 
 @router.put("/{requirement_id}", response_model=RequirementOut)
 async def update_requirement(

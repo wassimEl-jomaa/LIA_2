@@ -51,24 +51,15 @@ class BaseIn(BaseModel):
     project_id: int = Field(..., description="Owned project id")
 
 
-class TestCasesIn(BaseIn):
-    requirement: str = Field(min_length=5)
-
-class TestCaseCreateIn(BaseModel):
-    project_id: int
-    requirement_id: int | None = None   # ✅ add this
-    title: str
-    description: str | None = None
-    preconditions: list[str] | None = None
-    steps: list[str] | None = None
-    expected_result: str | None = None
-class RiskIn(BaseIn):
-    requirement: str = Field(min_length=5)
 
 
 class RegressionIn(BaseIn):
     change_description: str = Field(min_length=5)
     changed_components: Optional[list[str]] = None
+
+class RiskIn(BaseIn):
+    feature_description: str = Field(min_length=5)
+    technical_details: Optional[str] = None
 
 class SummaryIn(BaseIn):
     test_results: str = Field(min_length=5)
@@ -172,6 +163,17 @@ class UserUpdateIn(BaseModel):
 
     role_id: Optional[int] = None
     organization_id: Optional[int] = None
+
+
+# ---------- REQUIREMENTS ----------
+class RequirementTestCaseIn(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    description: Optional[str] = None
+    preconditions: Optional[List[str]] = None
+    steps: Optional[List[str]] = None
+    expected_result: Optional[str] = None
+    priority: Optional[str] = "medium"
+    status: Optional[str] = "active"
 class RequirementPredictIn(BaseModel):
     text: str = Field(min_length=10)
 
@@ -187,9 +189,8 @@ class RequirementCreateIn(BaseModel):
     source: Optional[str] = "manual"
     external_id: Optional[str] = None
 
-    # Optional test cases to create together with the requirement
-    # Each item may include: title, description, steps (list[str] or newline text), expected_result
-    test_cases: Optional[List[dict]] = None
+    # ✅ optional: allow creating test cases in same request
+    test_cases: Optional[List[RequirementTestCaseIn]] = None
 
 
 class RequirementUpdateIn(BaseModel):
@@ -204,14 +205,16 @@ class RequirementOut(BaseModel):
     id: int
     project_id: int
     title: str
-    description: str
-    acceptance_criteria: Optional[str] = None
-    source: str
-    external_id: Optional[str] = None
-    test_cases: List["TestCaseOut"] = []
     created_at: str
 
-# Add missing GroupCreateIn so other modules can import it
+    created_by_user_id: Optional[int] = None
+    created_by_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+
 class GroupCreateIn(BaseModel):
     name: str = Field(min_length=2, max_length=150)
     organization_id: Optional[int] = None
@@ -275,20 +278,26 @@ class ProjectMemberAddByEmailIn(BaseModel):
 
 
 # ---------- TEST CASES ----------
+
+class TestCasesIn(BaseIn):
+    requirement: str = Field(min_length=5)
+
 class TestCaseCreateIn(BaseModel):
     project_id: int
-    title: str = Field(min_length=1)
+    requirement_id: Optional[int] = None  # ✅ keep this
+    title: str = Field(min_length=1, max_length=255)
     description: Optional[str] = None
-    # steps can be submitted as a list of step strings
-    steps: Optional[List[str]] = None
-    # optional preconditions can be a list of strings
     preconditions: Optional[List[str]] = None
+    steps: Optional[List[str]] = None
     expected_result: Optional[str] = None
+    priority: Optional[str] = "medium"
+    status: Optional[str] = "active"
 
 
 class TestCaseOut(BaseModel):
     id: int
     project_id: int
+    requirement_id: Optional[int] = None  # ✅ ADD THIS
     title: str
     description: Optional[str] = None
     steps: Optional[List[str]] = None

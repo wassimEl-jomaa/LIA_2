@@ -208,11 +208,25 @@ class User(Base):
         cascade="all, delete-orphan",
         foreign_keys="TestExecution.executed_by_user_id",
     )
+    created_requirements = relationship(
+    "Requirement",
+    back_populates="created_by_user",
+    foreign_keys="Requirement.created_by_user_id",
+)
+
+    created_requirement_analyses = relationship(
+        "RequirementAnalysis",
+        back_populates="created_by_user",
+        cascade="all, delete-orphan",
+        foreign_keys="RequirementAnalysis.created_by_user_id",
+    )
 
 
 # =========================
 # REQUIREMENTS (Krav / User story)
 # =========================
+
+
 class Requirement(Base):
     __tablename__ = "requirements"
 
@@ -224,6 +238,13 @@ class Requirement(Base):
         index=True,
     )
 
+    # ✅ NEW: creator user id
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     acceptance_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -231,10 +252,67 @@ class Requirement(Base):
     source: Mapped[str] = mapped_column(String(50), nullable=False, default="manual")
     external_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
 
     project = relationship("Project", back_populates="requirements")
     test_cases = relationship("TestCase", back_populates="requirement", cascade="all, delete-orphan")
+
+    analyses = relationship(
+        "RequirementAnalysis",
+        back_populates="requirement",
+        cascade="all, delete-orphan",
+    )
+
+    # ✅ NEW: relationship to user
+    created_by_user = relationship(
+    "User",
+    foreign_keys=[created_by_user_id],
+    back_populates="created_requirements",
+)
+
+
+# =========================
+# REQUIREMENT ANALYSIS
+# =========================
+class RequirementAnalysis(Base):
+    __tablename__ = "requirement_analyses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    requirement_id: Mapped[int] = mapped_column(
+        ForeignKey("requirements.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    risk_level: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    recommendations: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    requirement = relationship("Requirement", back_populates="analyses")
+    created_by_user = relationship(
+        "User",
+        back_populates="created_requirement_analyses",
+        foreign_keys=[created_by_user_id],
+    )
+
 
 
 # =========================
