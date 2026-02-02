@@ -10,7 +10,6 @@ import {
   createTestCase,
   updateTestCase,
   deleteTestCase,
-  analyzeRequirement,
 } from "../api";
 
 // Vite-safe base (and avoids hardcoding)
@@ -62,18 +61,86 @@ function safeName(v) {
   return s || "—";
 }
 
-function Badge({ children, tone = "gray" }) {
+/** UI Helpers */
+function cn(...classes) {
+  return classes.filter(Boolean).join(" ");
+}
+
+function Badge({ children, tone = "slate" }) {
   const base =
-    "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold border";
+    "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold border backdrop-blur";
   const tones = {
-    gray: "bg-slate-50 text-slate-700 border-slate-200",
-    blue: "bg-blue-50 text-blue-700 border-blue-200",
-    green: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    amber: "bg-amber-50 text-amber-800 border-amber-200",
-    red: "bg-rose-50 text-rose-700 border-rose-200",
-    purple: "bg-purple-50 text-purple-700 border-purple-200",
+    slate: "bg-slate-50/70 text-slate-700 border-slate-200",
+    blue: "bg-blue-50/70 text-blue-700 border-blue-200",
+    green: "bg-emerald-50/70 text-emerald-700 border-emerald-200",
+    amber: "bg-amber-50/70 text-amber-800 border-amber-200",
+    red: "bg-rose-50/70 text-rose-700 border-rose-200",
+    purple: "bg-purple-50/70 text-purple-700 border-purple-200",
+    indigo: "bg-indigo-50/70 text-indigo-700 border-indigo-200",
   };
-  return <span className={`${base} ${tones[tone] || tones.gray}`}>{children}</span>;
+  return <span className={cn(base, tones[tone] || tones.slate)}>{children}</span>;
+}
+
+function Button({ variant = "primary", className, ...props }) {
+  const base =
+    "inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed";
+
+  const variants = {
+    primary:
+      "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm hover:from-blue-700 hover:to-indigo-700 focus:ring-blue-300",
+    secondary:
+      "bg-white/80 text-slate-800 border border-slate-200 hover:bg-white focus:ring-slate-300",
+    ghost:
+      "bg-transparent text-slate-700 hover:bg-slate-100/70 border border-transparent focus:ring-slate-300",
+    danger:
+      "bg-rose-600 text-white hover:bg-rose-700 focus:ring-rose-300",
+    dangerOutline:
+      "bg-white/80 text-rose-700 border border-rose-200 hover:bg-rose-50 focus:ring-rose-200",
+  };
+
+  return (
+    <button className={cn(base, variants[variant], className)} {...props} />
+  );
+}
+
+function Card({ className, children }) {
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border border-white/40 bg-white/70 shadow-[0_1px_0_0_rgba(15,23,42,0.04)] backdrop-blur",
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function CardHeader({ className, children }) {
+  return (
+    <div className={cn("px-6 py-4 border-b border-slate-100/80", className)}>
+      {children}
+    </div>
+  );
+}
+
+function CardBody({ className, children }) {
+  return <div className={cn("p-6", className)}>{children}</div>;
+}
+
+function Notice({ tone = "error", children }) {
+  const map = {
+    error: "border-rose-200 bg-rose-50 text-rose-800",
+    warn: "border-amber-200 bg-amber-50 text-amber-900",
+    info: "border-blue-200 bg-blue-50 text-blue-900",
+    success: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  };
+  return (
+    <div className={cn("rounded-xl border px-4 py-3 text-sm", map[tone])}>
+      {children}
+    </div>
+  );
 }
 
 export default function ManageTestCases() {
@@ -99,6 +166,7 @@ export default function ManageTestCases() {
   const [loadingList, setLoadingList] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
   // analysis state
   const [analysis, setAnalysis] = useState(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
@@ -129,34 +197,40 @@ export default function ManageTestCases() {
     if (!projectId || !requirementId) {
       setRequirement(null);
       setRequirementError("");
+      setAnalysis(null);
+      setAnalysisError("");
       return;
     }
     loadRequirement();
+    loadAnalysis();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, requirementId]);
 
-  async function runAnalysis() {
-  setAnalysisLoading(true);
-  setAnalysisError("");
-  try {
-    const res = await analyzeRequirement({
-      project_id: Number(projectId),
-      requirement: requirement?.title || "", // or full requirement text
-      context: { page: "ManageTestCases" },
-    });
-    setAnalysis(res);
-  } catch (e) {
-    setAnalysisError(e.message || String(e));
-  } finally {
-    setAnalysisLoading(false);
+  async function loadAnalysis() {
+    if (!requirementId) return;
+    setAnalysisLoading(true);
+    setAnalysisError("");
+    try {
+      const list = await apiFetch(
+        `/api/requirement_analyses?requirement_id=${requirementId}&limit=1`
+      );
+      const latest = Array.isArray(list) ? list[0] : null;
+      setAnalysis(latest || null);
+    } catch (e) {
+      setAnalysis(null);
+      setAnalysisError(e?.message || "Failed to load requirement analysis");
+    } finally {
+      setAnalysisLoading(false);
+    }
   }
-}
+
   async function loadRequirement() {
     setLoadingRequirement(true);
     setRequirementError("");
     try {
-      // Using list endpoint to find the selected requirement (works with your backend)
-      const list = await apiFetch(`/api/requirements?project_id=${projectId}&limit=200`);
+      const list = await apiFetch(
+        `/api/requirements?project_id=${projectId}&limit=200`
+      );
       const r = (Array.isArray(list) ? list : []).find(
         (x) => String(x.id) === String(requirementId)
       );
@@ -214,6 +288,10 @@ export default function ManageTestCases() {
       priority: tc.priority || "medium",
       status: tc.status || "active",
     });
+    // Nice UX: scroll to form on edit
+    requestAnimationFrame(() => {
+      document.getElementById("tc-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   function toneFromPriority(priority) {
@@ -226,7 +304,7 @@ export default function ManageTestCases() {
       case "low":
         return "green";
       default:
-        return "gray";
+        return "slate";
     }
   }
 
@@ -236,11 +314,26 @@ export default function ManageTestCases() {
         return "blue";
       case "deprecated":
       case "inactive":
-        return "gray";
+        return "slate";
       case "draft":
         return "purple";
       default:
-        return "gray";
+        return "slate";
+    }
+  }
+
+  function accentFromPriority(priority) {
+    switch ((priority || "").toLowerCase()) {
+      case "critical":
+        return "from-rose-500 to-orange-400";
+      case "high":
+        return "from-rose-500 to-pink-500";
+      case "medium":
+        return "from-amber-400 to-yellow-400";
+      case "low":
+        return "from-emerald-400 to-cyan-400";
+      default:
+        return "from-slate-300 to-slate-200";
     }
   }
 
@@ -316,71 +409,77 @@ export default function ManageTestCases() {
   }, [items, query, requirementId]);
 
   return (
-    <div className="min-h-[calc(100vh-56px)] bg-gradient-to-b from-slate-50 via-white to-slate-50 px-4 py-8">
+    <div className="min-h-[calc(100vh-56px)] px-4 py-8 bg-[radial-gradient(circle_at_20%_10%,rgba(59,130,246,0.14),transparent_40%),radial-gradient(circle_at_80%_0%,rgba(99,102,241,0.10),transparent_35%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.10),transparent_40%)]">
       <div className="mx-auto max-w-6xl space-y-6">
-        {/* Header */}
-        <div className="relative overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(59,130,246,0.10),transparent_45%),radial-gradient(circle_at_85%_0%,rgba(16,185,129,0.10),transparent_35%)]" />
-          <div className="relative p-6 space-y-4">
+        {/* HERO HEADER */}
+        <Card className="relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-white/40 via-white/10 to-white/30" />
+          <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-gradient-to-tr from-blue-200/40 to-indigo-200/40 blur-2xl" />
+          <div className="absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-gradient-to-tr from-emerald-200/35 to-cyan-200/35 blur-2xl" />
+
+          <div className="relative p-6 space-y-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div className="space-y-2">
-                <h1 className="text-3xl font-bold text-slate-900">Manage Test Cases</h1>
+                <div className="inline-flex items-center gap-2">
+                  <span className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-sm" />
+                  <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
+                    Manage Test Cases
+                  </h1>
+                </div>
 
                 <div className="flex flex-wrap gap-2 text-xs">
                   <Badge tone="blue">Project: {projectId || "—"}</Badge>
                   {requirementId ? (
                     <Badge tone="purple">Requirement: {requirementId}</Badge>
                   ) : (
-                    <Badge tone="gray">All project test cases</Badge>
+                    <Badge tone="slate">All project test cases</Badge>
                   )}
                   <Badge tone="green">{filtered.length} shown</Badge>
                 </div>
 
                 <p className="text-sm text-slate-600 max-w-2xl">
-                  Create, edit, and remove test cases. If opened from a requirement, this page shows only its test cases.
+                  Create, edit, and remove test cases. If opened from a requirement,
+                  this page shows only its test cases.
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-2 justify-end">
-                <button
+                <Button
+                  variant="secondary"
                   onClick={() => {
                     if (projectId) navigate(`/projects/${projectId}`);
                     else navigate("/projects");
                   }}
-                  className="rounded-xl bg-white px-4 py-2 font-semibold text-slate-800 border border-slate-200 hover:bg-slate-50"
                 >
                   ← Back
-                </button>
-                
+                </Button>
 
-                <button
+                <Button
+                  variant="secondary"
                   onClick={fetchList}
                   disabled={loadingList}
-                  className="rounded-xl bg-white px-4 py-2 font-semibold text-slate-800 border border-slate-200 hover:bg-slate-50 disabled:opacity-60"
                 >
                   {loadingList ? "Refreshing…" : "Refresh"}
-                </button>
+                </Button>
               </div>
             </div>
 
             {/* Requirement summary */}
             {requirementId && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="rounded-2xl border border-slate-200/70 bg-white/60 p-4 backdrop-blur">
                 {loadingRequirement ? (
                   <div className="animate-pulse space-y-2">
                     <div className="h-4 w-2/3 bg-slate-200 rounded" />
                     <div className="h-3 w-1/3 bg-slate-200 rounded" />
                   </div>
                 ) : requirementError ? (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                    {requirementError}
-                  </div>
+                  <Notice tone="warn">{requirementError}</Notice>
                 ) : requirement ? (
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone="purple">Requirement #{requirement.id}</Badge>
-                      <Badge tone="gray">Created: {formatDate(requirement.created_at)}</Badge>
-                      <Badge tone="blue">
+                      <Badge tone="slate">Created: {formatDate(requirement.created_at)}</Badge>
+                      <Badge tone="indigo">
                         Created by:{" "}
                         {safeName(
                           requirement.created_by_name ??
@@ -399,23 +498,83 @@ export default function ManageTestCases() {
                 ) : (
                   <div className="text-sm text-slate-600">Requirement not found.</div>
                 )}
+
+                <div className="mt-4 rounded-xl border border-slate-200/80 bg-white/80 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-slate-800">
+                      Requirement analysis
+                    </div>
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      onClick={loadAnalysis}
+                      disabled={analysisLoading}
+                      className="px-3 py-1.5 text-xs"
+                    >
+                      {analysisLoading ? "Refreshing…" : "Refresh"}
+                    </Button>
+                  </div>
+
+                  {analysisError ? (
+                    <div className="mt-2">
+                      <Notice tone="warn">{analysisError}</Notice>
+                    </div>
+                  ) : analysis ? (
+                    <div className="mt-3 space-y-3 text-sm text-slate-700">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
+                          <div className="text-[11px] font-semibold text-slate-600">
+                            Category
+                          </div>
+                          <div className="mt-1 font-semibold text-slate-800">
+                            {analysis.category || "—"}
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
+                          <div className="text-[11px] font-semibold text-slate-600">
+                            Risk level
+                          </div>
+                          <div className="mt-1 font-semibold text-slate-800">
+                            {analysis.risk_level || "—"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200/80 bg-white p-3">
+                        <div className="text-[11px] font-semibold text-slate-600">
+                          Summary
+                        </div>
+                        <div className="mt-1">{analysis.summary || "—"}</div>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200/80 bg-white p-3">
+                        <div className="text-[11px] font-semibold text-slate-600">
+                          Recommendations
+                        </div>
+                        <div className="mt-1 whitespace-pre-wrap">
+                          {analysis.recommendations || "—"}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-sm text-slate-500">
+                      No analysis found for this requirement.
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
-            {error && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-                {error}
-              </div>
-            )}
+            {error && <Notice tone="error">{error}</Notice>}
           </div>
-        </div>
+        </Card>
 
-        {/* Grid */}
+        {/* GRID */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* List */}
+          {/* LIST */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100">
-              <div className="px-6 py-4 border-b border-slate-100 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <Card>
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="text-sm font-semibold text-slate-800">
                     {requirementId ? "Test Cases for Requirement" : "Existing Test Cases"}
@@ -425,15 +584,21 @@ export default function ManageTestCases() {
                   </div>
                 </div>
 
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search title/description…"
-                  className="w-full sm:w-72 rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
-                />
-              </div>
+                <div className="relative w-full sm:w-80">
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search title/description…"
+                    className="w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm
+                               focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  />
+                  <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 text-xs">
+                    ⌘K
+                  </div>
+                </div>
+              </CardHeader>
 
-              <div className="p-6">
+              <CardBody>
                 {loadingList ? (
                   <div className="grid gap-3">
                     {[...Array(3)].map((_, i) => (
@@ -448,7 +613,7 @@ export default function ManageTestCases() {
                     ))}
                   </div>
                 ) : filtered.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 p-6 text-sm text-slate-500">
                     {requirementId
                       ? "No test cases linked to this requirement yet."
                       : "No test cases found."}
@@ -458,9 +623,18 @@ export default function ManageTestCases() {
                     {filtered.map((tc) => (
                       <div
                         key={tc.id}
-                        className="rounded-2xl border border-slate-200 bg-white hover:bg-slate-50/40 transition"
+                        className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/80 transition
+                                   hover:shadow-[0_8px_24px_-18px_rgba(15,23,42,0.35)]"
                       >
-                        <div className="p-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        {/* Priority accent bar */}
+                        <div
+                          className={cn(
+                            "absolute left-0 top-0 h-full w-1.5 bg-gradient-to-b",
+                            accentFromPriority(tc.priority)
+                          )}
+                        />
+
+                        <div className="p-4 pl-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <div className="font-semibold text-slate-900">
@@ -477,31 +651,34 @@ export default function ManageTestCases() {
                             </div>
 
                             {tc.description && (
-                              <div className="mt-1 text-sm text-slate-600">{tc.description}</div>
+                              <div className="mt-1 text-sm text-slate-600">
+                                {tc.description}
+                              </div>
                             )}
                           </div>
 
                           <div className="flex items-center gap-2 justify-end">
-                            <button
+                            <Button
                               type="button"
                               onClick={() => populateForEdit(tc)}
-                              className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                              className="px-3 py-1.5 text-xs"
                             >
                               Update
-                            </button>
+                            </Button>
 
-                            <button
+                            <Button
                               type="button"
+                              variant="dangerOutline"
                               onClick={() => onDelete(tc.id)}
-                              className="rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 border border-rose-200 hover:bg-rose-50"
+                              className="px-3 py-1.5 text-xs"
                             >
                               Delete
-                            </button>
+                            </Button>
                           </div>
                         </div>
 
-                        <div className="px-4 pb-4">
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+                        <div className="px-4 pb-4 pl-5">
+                          <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 space-y-4">
                             <div>
                               <div className="text-sm font-semibold text-slate-700">
                                 Preconditions
@@ -544,14 +721,14 @@ export default function ManageTestCases() {
                     ))}
                   </div>
                 )}
-              </div>
-            </div>
+              </CardBody>
+            </Card>
           </div>
 
-          {/* Form */}
-          <div>
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100">
-              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          {/* FORM */}
+          <div id="tc-form">
+            <Card>
+              <CardHeader className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-semibold text-slate-800">
                     {editingId ? "Edit Test Case" : "Create Test Case"}
@@ -564,7 +741,7 @@ export default function ManageTestCases() {
                 </div>
 
                 {editingId && <Badge tone="blue">ID: {editingId}</Badge>}
-              </div>
+              </CardHeader>
 
               <form onSubmit={onSubmit} className="p-6 space-y-4">
                 <div>
@@ -573,19 +750,23 @@ export default function ManageTestCases() {
                     name="title"
                     value={form.title}
                     onChange={onChange}
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm
+                               focus:outline-none focus:ring-2 focus:ring-blue-200"
                     required
                   />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700">Priority</label>
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Priority
+                    </label>
                     <select
                       name="priority"
                       value={form.priority}
                       onChange={onChange}
-                      className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm
+                                 focus:outline-none focus:ring-2 focus:ring-blue-200"
                     >
                       <option value="low">low</option>
                       <option value="medium">medium</option>
@@ -595,12 +776,15 @@ export default function ManageTestCases() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700">Status</label>
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Status
+                    </label>
                     <select
                       name="status"
                       value={form.status}
                       onChange={onChange}
-                      className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm
+                                 focus:outline-none focus:ring-2 focus:ring-blue-200"
                     >
                       <option value="active">active</option>
                       <option value="draft">draft</option>
@@ -611,12 +795,15 @@ export default function ManageTestCases() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700">Description</label>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Description
+                  </label>
                   <textarea
                     name="description"
                     value={form.description}
                     onChange={onChange}
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm
+                               focus:outline-none focus:ring-2 focus:ring-blue-200"
                     rows={3}
                   />
                 </div>
@@ -629,7 +816,8 @@ export default function ManageTestCases() {
                     name="preconditions"
                     value={form.preconditions}
                     onChange={onChange}
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm
+                               focus:outline-none focus:ring-2 focus:ring-blue-200"
                     rows={3}
                   />
                 </div>
@@ -642,7 +830,8 @@ export default function ManageTestCases() {
                     name="steps"
                     value={form.steps}
                     onChange={onChange}
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm
+                               focus:outline-none focus:ring-2 focus:ring-blue-200"
                     rows={5}
                   />
                 </div>
@@ -655,36 +844,30 @@ export default function ManageTestCases() {
                     name="expected_result"
                     value={form.expected_result}
                     onChange={onChange}
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm
+                               focus:outline-none focus:ring-2 focus:ring-blue-200"
                   />
                 </div>
 
                 <div className="flex flex-wrap gap-2 pt-1">
-                  <button
-                    type="submit"
-                    disabled={saving || !projectId}
-                    className="rounded-xl bg-blue-600 px-4 py-2 text-white font-semibold hover:bg-blue-700 disabled:opacity-60"
-                  >
+                  <Button type="submit" disabled={saving || !projectId}>
                     {saving ? "Saving…" : editingId ? "Update" : "Create"}
-                  </button>
+                  </Button>
 
-                  <button
-                    type="button"
-                    onClick={clearForm}
-                    className="rounded-xl bg-white px-4 py-2 font-semibold text-slate-800 border border-slate-200 hover:bg-slate-50"
-                  >
+                  <Button type="button" variant="secondary" onClick={clearForm}>
                     Clear
-                  </button>
+                  </Button>
                 </div>
 
                 {requirementId && (
                   <div className="text-xs text-slate-500">
-                    Opened from Requirement <span className="font-mono">{requirementId}</span>.
-                    New test cases will be linked automatically.
+                    Opened from Requirement{" "}
+                    <span className="font-mono">{requirementId}</span>. New test cases
+                    will be linked automatically.
                   </div>
                 )}
               </form>
-            </div>
+            </Card>
           </div>
         </div>
 

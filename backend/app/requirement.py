@@ -97,6 +97,8 @@ async def create_requirement(
 
                 steps_in = tc.get("steps") or tc.get("step")
                 expected = tc.get("expected_result") or tc.get("expected")
+                priority = tc.get("priority") or "medium"
+                status = tc.get("status") or "active"
 
                 # normalize steps to newline TEXT (same as /api/test_cases)
                 steps_text = None
@@ -112,6 +114,8 @@ async def create_requirement(
                     description=description,
                     steps=steps_text,
                     expected_result=expected,
+                    priority=priority,
+                    status=status,
                 )
                 db.add(tc_obj)
                 created_tc_rows.append(tc_obj)

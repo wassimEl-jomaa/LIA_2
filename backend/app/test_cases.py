@@ -110,6 +110,8 @@ async def create_test_case(
     steps=steps_text,
     preconditions=preconds_text,
     expected_result=payload.expected_result,
+    priority=(payload.priority or "medium"),
+    status=(payload.status or "active"),
 )
 
     db.add(tc)
@@ -197,6 +199,8 @@ async def update_test_case(
             tc.preconditions = str(payload.preconditions)
 
     tc.expected_result = payload.expected_result
+    tc.priority = payload.priority or tc.priority or "medium"
+    tc.status = payload.status or tc.status or "active"
 
     await db.commit()
     await db.refresh(tc)

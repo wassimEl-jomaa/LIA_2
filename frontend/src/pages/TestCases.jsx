@@ -112,7 +112,7 @@ export default function TestCases() {
 
     const requirementPayload = {
       project_id: projectId,
-      title: buildRequirementTitle(requirementText),
+      title: requirementText.trim(),
       description: requirementText.trim(),
     };
 
@@ -158,10 +158,10 @@ export default function TestCases() {
       const jsonData = ai.parsed_json || {};
       const generated = (jsonData.test_cases || []).map((tc) => ({
         title: tc.title,
-        priority: tc.priority || "medium",
+        priority: (tc.priority || "medium").toLowerCase(),
         preconditions: tc.preconditions || [],
         steps: tc.steps || [],
-        expected: tc.expected,
+        expected: tc.expected_result || tc.expected,
         type: tc.type,
         description: tc.description || null,
       }));
@@ -183,9 +183,8 @@ export default function TestCases() {
           preconditions: tc.preconditions || [],
           steps: tc.steps || [],
           expected_result: tc.expected || null,
-          // priority/status can be added if backend supports it
-          // priority: tc.priority || "medium",
-          // status: "active",
+          priority: tc.priority || "medium",
+          status: "active",
         };
 
         const createdTc = await apiFetch("/api/test_cases", {
