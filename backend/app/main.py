@@ -21,6 +21,7 @@ from .history import router as history_router
 from .groups import router as groups_router
 from .requirement_analysis import router as requirement_analysis_router
 from .project_sharing import router as project_sharing_router
+from .test_executions import router as test_executions_router
 from .ml import predict_category
 from .schemas import RequirementPredictIn, RequirementPredictOut
 from .models import User, Project
@@ -58,6 +59,7 @@ app.include_router(requirements_router) # requires requirement.py
 app.include_router(groups_router)
 app.include_router(project_sharing_router)
 app.include_router(test_cases_router)
+app.include_router(test_executions_router)
 app.include_router(history_router)
 app.include_router(requirement_analysis_router)
 # DEBUG: show full traceback in Swagger when 500 happens

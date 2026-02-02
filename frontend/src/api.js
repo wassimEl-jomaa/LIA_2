@@ -107,6 +107,55 @@ export async function deleteTestCase(testCaseId) {
   return r.json();
 }
 
+export async function listTestExecutions({ projectId, testCaseId, limit = 200 }) {
+  const token = localStorage.getItem("token");
+  if (!token) throw new Error("Authentication required. Please login first.");
+
+  const tcQuery = testCaseId ? `&test_case_id=${testCaseId}` : "";
+  const r = await fetch(
+    `/api/test_executions?project_id=${projectId}&limit=${limit}${tcQuery}`,
+    {
+      method: "GET",
+      headers: { "Authorization": `Bearer ${token}` },
+    }
+  );
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || err.error || "Request failed");
+  }
+  return r.json();
+}
+
+export async function createTestExecution(payload) {
+  const token = localStorage.getItem("token");
+  if (!token) throw new Error("Authentication required. Please login first.");
+  const r = await fetch("/api/test_executions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || err.error || "Request failed");
+  }
+  return r.json();
+}
+
+export async function updateTestExecution(executionId, payload) {
+  const token = localStorage.getItem("token");
+  if (!token) throw new Error("Authentication required. Please login first.");
+  const r = await fetch(`/api/test_executions/${executionId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || err.error || "Request failed");
+  }
+  return r.json();
+}
+
 export async function predictRequirementCategory({ text }) {
   const token = localStorage.getItem("token");
   if (!token) {

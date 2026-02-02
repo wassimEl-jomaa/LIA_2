@@ -35,6 +35,38 @@ async function apiFetch(path) {
   return data;
 }
 
+async function apiFetchWithOptions(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: options.method || "GET",
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+      ...(options.headers || {}),
+    },
+    credentials: "include",
+    body: options.body,
+  });
+
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok) {
+    const msg =
+      data?.detail
+        ? typeof data.detail === "string"
+          ? data.detail
+          : JSON.stringify(data.detail)
+        : text || "Request failed";
+    throw new Error(msg);
+  }
+
+  return data;
+}
+
 function formatDate(value) {
   if (!value) return "—";
   const d = new Date(value);
@@ -128,6 +160,17 @@ export default function SelectedProject() {
       setRequirements([]);
     } finally {
       setLoadingRequirements(false);
+    }
+  }
+
+  async function deleteRequirement(requirementId) {
+    if (!confirm("Delete this requirement? This will remove linked test cases.")) return;
+    setRequirementsError("");
+    try {
+      await apiFetchWithOptions(`/api/requirements/${requirementId}`, { method: "DELETE" });
+      await loadRequirements();
+    } catch (err) {
+      setRequirementsError(err?.message || "Failed to delete requirement");
     }
   }
 
@@ -324,18 +367,28 @@ export default function SelectedProject() {
                           {safeName(r.created_by_name ?? r.creator_name ?? r.created_by ?? r.user_name)}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              navigate(`/projects/${projectId}/testcases`, {
-                                state: { requirementId: r.id },
-                              })
-                            }
-                            className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm"
-                            title="Manage test cases for this requirement"
-                          >
-                            Manage
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                navigate(`/projects/${projectId}/testcases`, {
+                                  state: { requirementId: r.id },
+                                })
+                              }
+                              className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm"
+                              title="Manage test cases for this requirement"
+                            >
+                              Manage
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteRequirement(r.id)}
+                              className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700 shadow-sm"
+                              title="Delete requirement"
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -364,14 +417,24 @@ export default function SelectedProject() {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/projects/${projectId}/testcases?requirementId=${r.id}`)}
-                        className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm"
-                        title="Manage test cases for this requirement"
-                      >
-                        Manage
-                      </button>
+                      <div className="flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/projects/${projectId}/testcases?requirementId=${r.id}`)}
+                          className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm"
+                          title="Manage test cases for this requirement"
+                        >
+                          Manage
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteRequirement(r.id)}
+                          className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700 shadow-sm"
+                          title="Delete requirement"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

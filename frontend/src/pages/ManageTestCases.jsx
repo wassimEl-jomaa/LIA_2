@@ -668,6 +668,17 @@ export default function ManageTestCases() {
 
                             <Button
                               type="button"
+                              variant="primary"
+                              onClick={() =>
+                                navigate(`/projects/${projectId}/execute?testCaseId=${tc.id}`)
+                              }
+                              className="px-3 py-1.5 text-xs"
+                            >
+                              Execute
+                            </Button>
+
+                            <Button
+                              type="button"
                               variant="dangerOutline"
                               onClick={() => onDelete(tc.id)}
                               className="px-3 py-1.5 text-xs"

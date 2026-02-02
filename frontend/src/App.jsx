@@ -31,6 +31,7 @@ export default function App() {
           <Route path="/projects/:projectId/manage" element={<ManageProject />} />
           <Route path="/projects/:projectId/testcases" element={<ManageTestCases />} />
           <Route path="/projects/:projectId/testcases/*" element={<ManageTestCases />} />
+          <Route path="/projects/:projectId/execute" element={<ExecuteTestCases />} />
           {/* RequestLog/history UI removed */}
         </Routes>
       </main>

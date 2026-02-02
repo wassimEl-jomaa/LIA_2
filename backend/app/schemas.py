@@ -321,6 +321,7 @@ class TestExecutionOut(BaseModel):
     project_id: int
     test_case_id: int
     executed_by_user_id: Optional[int] = None
+    executed_by_user_name: Optional[str] = None
     result: str
     notes: Optional[str] = None
     started_at: Optional[str] = None
