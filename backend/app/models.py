@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, String, Text, DateTime, UniqueConstraint, func, Integer, ForeignKey,Enum
+from sqlalchemy import Boolean, String, Text, DateTime, UniqueConstraint, func, Integer, ForeignKey,Enum, Index, CheckConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
@@ -65,7 +65,11 @@ class Project(Base):
     organization_rel = relationship("Organization", back_populates="projects")
 
     
-
+    classified_requirements = relationship(
+    "ClassifyRequirement",
+    back_populates="project",
+    cascade="all, delete-orphan",
+)
     requirements = relationship("Requirement", back_populates="project", cascade="all, delete-orphan")
 
     test_cases = relationship("TestCase", back_populates="project", cascade="all, delete-orphan")
@@ -261,7 +265,11 @@ class Requirement(Base):
 
     project = relationship("Project", back_populates="requirements")
     test_cases = relationship("TestCase", back_populates="requirement", cascade="all, delete-orphan")
-
+    classifications = relationship(
+    "ClassifyRequirement",
+    back_populates="requirement",
+    cascade="all, delete-orphan",
+)
     analyses = relationship(
         "RequirementAnalysis",
         back_populates="requirement",
@@ -395,6 +403,54 @@ class TestExecution(Base):
     test_case = relationship("TestCase", back_populates="executions")
     executed_by_user = relationship("User", back_populates="created_test_executions")
 
+
+class ClassifyRequirement(Base):
+    __tablename__ = "classify_requirements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    requirement_id: Mapped[int] = mapped_column(
+        ForeignKey("requirements.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # AI classification results
+    category: Mapped[str] = mapped_column(String(100), nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    confidence: Mapped[float | None] = mapped_column(nullable=True)
+
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recommendations: Mapped[str | None] = mapped_column(Text, nullable=True)  # ✅ add
+    raw_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)       # ✅ add (recommended)
+
+    model_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "risk_level IN ('low','medium','high','critical')",
+            name="ck_classify_requirements_risk_level",
+        ),
+        Index("ix_classify_req_project_created", "project_id", "created_at"),
+        Index("ix_classify_req_requirement_created", "requirement_id", "created_at"),
+    )
+
+    project = relationship("Project", back_populates="classified_requirements")
+    requirement = relationship("Requirement", back_populates="classifications")
 
 # =========================
 # TOKENS (AUTH)

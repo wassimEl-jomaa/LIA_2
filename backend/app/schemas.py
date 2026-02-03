@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import Optional, Any, List, Literal
 
 # ---------- AUTH ----------
@@ -368,3 +368,86 @@ class RequirementAnalysisOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+
+RiskLevel = Literal["low", "medium", "high", "critical"]
+
+class ClassifyRequirementBase(BaseModel):
+    category: str = Field(..., max_length=100, examples=["security", "performance", "functional"])
+    risk_level: RiskLevel = Field(..., examples=["medium"])
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0, examples=[0.82])
+
+    summary: Optional[str] = None
+    reasoning: Optional[str] = None
+    recommendations: Optional[str] = None  # recommended for your UI
+    model_name: Optional[str] = Field(None, max_length=100)
+
+class ClassifyRequirementCreate(BaseModel):
+    """
+    Manual create (optional). Usually you'll generate via AI endpoint.
+    """
+    project_id: int
+    requirement_id: int
+    category: str = Field(..., max_length=100)
+    risk_level: RiskLevel
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
+    summary: Optional[str] = None
+    reasoning: Optional[str] = None
+    recommendations: Optional[str] = None
+    model_name: Optional[str] = Field(None, max_length=100)
+
+class ClassifyRequirementOut(ClassifyRequirementBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    requirement_id: int
+    created_at: datetime
+
+class ClassifyRequirementListOut(BaseModel):
+    """
+    Useful if you want pagination metadata later.
+    """
+    items: list[ClassifyRequirementOut]
+    total: int
+
+class ClassifyRequirementGenerateRequest(BaseModel):
+    """
+    AI generation request.
+    """
+    project_id: int
+    requirement_id: int
+
+    # optional tuning / behavior flags
+    force: bool = False  # if True, generate even if a recent classification exists
+    include_recommendations: bool = True
+
+class ClassifyRequirementGenerateResponse(BaseModel):
+    """
+    AI generation response (returns the stored row).
+    """
+    classification: ClassifyRequirementOut
+
+class DashboardRiskCountsOut(BaseModel):
+    project_id: int
+    low: int = 0
+    medium: int = 0
+    high: int = 0
+    critical: int = 0
+    total: int = 0
+
+class RequirementLatestClassificationOut(BaseModel):
+    """
+    “Latest classification for each requirement” row used by dashboards.
+    """
+    requirement_id: int
+    requirement_title: Optional[str] = None
+
+    category: str
+    risk_level: RiskLevel
+    confidence: Optional[float] = None
+    created_at: datetime
+
+    summary: Optional[str] = None
+    recommendations: Optional[str] = None

@@ -22,6 +22,7 @@ from .groups import router as groups_router
 from .requirement_analysis import router as requirement_analysis_router
 from .project_sharing import router as project_sharing_router
 from .test_executions import router as test_executions_router
+from .classify_requirement import router as classify_requirements_router
 from .ml import predict_category
 from .schemas import RequirementPredictIn, RequirementPredictOut
 from .models import User, Project
@@ -62,6 +63,7 @@ app.include_router(test_cases_router)
 app.include_router(test_executions_router)
 app.include_router(history_router)
 app.include_router(requirement_analysis_router)
+app.include_router(classify_requirements_router)
 # DEBUG: show full traceback in Swagger when 500 happens
 @app.exception_handler(Exception)
 async def debug_exception_handler(request: Request, exc: Exception):
@@ -83,6 +85,17 @@ async def on_startup():
         except Exception as exc:
             # Don't block startup if DB is not Postgres or table doesn't exist yet
             print(f"[startup] raw_json column check skipped: {exc}")
+
+        # Ensure classify_requirements columns exist
+        try:
+            await conn.execute(
+                text("ALTER TABLE classify_requirements ADD COLUMN IF NOT EXISTS recommendations TEXT")
+            )
+            await conn.execute(
+                text("ALTER TABLE classify_requirements ADD COLUMN IF NOT EXISTS raw_json JSONB")
+            )
+        except Exception as exc:
+            print(f"[startup] classify_requirements column check skipped: {exc}")
 
     if not os.getenv("OPENAI_API_KEY"):
         print("WARNING: OPENAI_API_KEY is not set. Endpoints will fail until it is set.")

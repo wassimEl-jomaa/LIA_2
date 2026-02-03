@@ -143,6 +143,24 @@ function Notice({ tone = "error", children }) {
   );
 }
 
+/** Small UI piece: collapsible block for dense lists */
+function Disclosure({ title, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-xl border border-slate-200/80 bg-white/70">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left"
+      >
+        <div className="text-sm font-semibold text-slate-700">{title}</div>
+        <div className="text-slate-400 text-xs">{open ? "Hide" : "Show"}</div>
+      </button>
+      {open && <div className="px-4 pb-4">{children}</div>}
+    </div>
+  );
+}
+
 export default function ManageTestCases() {
   const { projectId: routeProjectId } = useParams();
   const location = useLocation();
@@ -172,6 +190,10 @@ export default function ManageTestCases() {
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
 
+  const [classification, setClassification] = useState(null);
+  const [classificationLoading, setClassificationLoading] = useState(false);
+  const [classificationError, setClassificationError] = useState("");
+
   const [query, setQuery] = useState("");
 
   const [form, setForm] = useState({
@@ -199,10 +221,13 @@ export default function ManageTestCases() {
       setRequirementError("");
       setAnalysis(null);
       setAnalysisError("");
+      setClassification(null);
+      setClassificationError("");
       return;
     }
     loadRequirement();
     loadAnalysis();
+    loadClassification();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, requirementId]);
 
@@ -221,6 +246,24 @@ export default function ManageTestCases() {
       setAnalysisError(e?.message || "Failed to load requirement analysis");
     } finally {
       setAnalysisLoading(false);
+    }
+  }
+
+  async function loadClassification() {
+    if (!projectId || !requirementId) return;
+    setClassificationLoading(true);
+    setClassificationError("");
+    try {
+      const list = await apiFetch(
+        `/api/classify_requirements?project_id=${projectId}&requirement_id=${requirementId}&limit=1`
+      );
+      const latest = Array.isArray(list) ? list[0] : null;
+      setClassification(latest || null);
+    } catch (e) {
+      setClassification(null);
+      setClassificationError(e?.message || "Failed to load requirement classification");
+    } finally {
+      setClassificationLoading(false);
     }
   }
 
@@ -288,7 +331,7 @@ export default function ManageTestCases() {
       priority: tc.priority || "medium",
       status: tc.status || "active",
     });
-    // Nice UX: scroll to form on edit
+
     requestAnimationFrame(() => {
       document.getElementById("tc-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
@@ -345,7 +388,7 @@ export default function ManageTestCases() {
     try {
       const payload = {
         project_id: parseInt(projectId, 10),
-        requirement_id: requirementId ? Number(requirementId) : null, // ✅ link correctly
+        requirement_id: requirementId ? Number(requirementId) : null,
         title: form.title.trim(),
         description: form.description?.trim() || null,
         steps: form.steps
@@ -409,336 +452,355 @@ export default function ManageTestCases() {
   }, [items, query, requirementId]);
 
   return (
-    <div className="min-h-[calc(100vh-56px)] px-4 py-8 bg-[radial-gradient(circle_at_20%_10%,rgba(59,130,246,0.14),transparent_40%),radial-gradient(circle_at_80%_0%,rgba(99,102,241,0.10),transparent_35%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.10),transparent_40%)]">
-      <div className="mx-auto max-w-6xl space-y-6">
-        {/* HERO HEADER */}
-        <Card className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-r from-white/40 via-white/10 to-white/30" />
-          <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-gradient-to-tr from-blue-200/40 to-indigo-200/40 blur-2xl" />
-          <div className="absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-gradient-to-tr from-emerald-200/35 to-cyan-200/35 blur-2xl" />
+    <div className="min-h-[calc(100vh-56px)] bg-[radial-gradient(circle_at_20%_10%,rgba(59,130,246,0.14),transparent_40%),radial-gradient(circle_at_80%_0%,rgba(99,102,241,0.10),transparent_35%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.10),transparent_40%)]">
+      <div className="mx-auto max-w-7xl px-4 py-6">
+        {/* Sticky App Header */}
+        <div className="sticky top-3 z-20">
+          <Card className="overflow-hidden">
+            <div className="relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-white/40 via-white/10 to-white/30" />
+              <div className="relative p-5">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-sm" />
+                      <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-slate-900">
+                        Manage Test Cases
+                      </h1>
+                    </div>
 
-          <div className="relative p-6 space-y-5">
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div className="space-y-2">
-                <div className="inline-flex items-center gap-2">
-                  <span className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-sm" />
-                  <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
-                    Manage Test Cases
-                  </h1>
-                </div>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <Badge tone="blue">Project: {projectId || "—"}</Badge>
+                      {requirementId ? (
+                        <Badge tone="purple">Requirement: {requirementId}</Badge>
+                      ) : (
+                        <Badge tone="slate">All project test cases</Badge>
+                      )}
+                      <Badge tone="green">{filtered.length} shown</Badge>
+                    </div>
 
-                <div className="flex flex-wrap gap-2 text-xs">
-                  <Badge tone="blue">Project: {projectId || "—"}</Badge>
-                  {requirementId ? (
-                    <Badge tone="purple">Requirement: {requirementId}</Badge>
-                  ) : (
-                    <Badge tone="slate">All project test cases</Badge>
-                  )}
-                  <Badge tone="green">{filtered.length} shown</Badge>
-                </div>
-
-                <p className="text-sm text-slate-600 max-w-2xl">
-                  Create, edit, and remove test cases. If opened from a requirement,
-                  this page shows only its test cases.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2 justify-end">
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    if (projectId) navigate(`/projects/${projectId}`);
-                    else navigate("/projects");
-                  }}
-                >
-                  ← Back
-                </Button>
-
-                <Button
-                  variant="secondary"
-                  onClick={fetchList}
-                  disabled={loadingList}
-                >
-                  {loadingList ? "Refreshing…" : "Refresh"}
-                </Button>
-              </div>
-            </div>
-
-            {/* Requirement summary */}
-            {requirementId && (
-              <div className="rounded-2xl border border-slate-200/70 bg-white/60 p-4 backdrop-blur">
-                {loadingRequirement ? (
-                  <div className="animate-pulse space-y-2">
-                    <div className="h-4 w-2/3 bg-slate-200 rounded" />
-                    <div className="h-3 w-1/3 bg-slate-200 rounded" />
+                    <p className="text-sm text-slate-600 max-w-2xl">
+                      Create, edit, and remove test cases. If opened from a requirement,
+                      this page shows only its test cases.
+                    </p>
                   </div>
-                ) : requirementError ? (
-                  <Notice tone="warn">{requirementError}</Notice>
-                ) : requirement ? (
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone="purple">Requirement #{requirement.id}</Badge>
-                      <Badge tone="slate">Created: {formatDate(requirement.created_at)}</Badge>
-                      <Badge tone="indigo">
-                        Created by:{" "}
-                        {safeName(
-                          requirement.created_by_name ??
-                            requirement.creator_name ??
-                            requirement.user_name
-                        )}
-                      </Badge>
-                    </div>
-                    <div className="text-base font-semibold text-slate-900">
-                      {requirement.title || "—"}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      Showing only test cases linked to this requirement.
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-sm text-slate-600">Requirement not found.</div>
-                )}
 
-                <div className="mt-4 rounded-xl border border-slate-200/80 bg-white/80 p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold text-slate-800">
-                      Requirement analysis
-                    </div>
+                  <div className="flex flex-wrap gap-2 justify-end">
                     <Button
-                      variant="ghost"
-                      type="button"
-                      onClick={loadAnalysis}
-                      disabled={analysisLoading}
-                      className="px-3 py-1.5 text-xs"
+                      variant="secondary"
+                      onClick={() => {
+                        if (projectId) navigate(`/projects/${projectId}`);
+                        else navigate("/projects");
+                      }}
                     >
-                      {analysisLoading ? "Refreshing…" : "Refresh"}
+                      ← Back
+                    </Button>
+
+                    <Button
+                      variant="secondary"
+                      onClick={fetchList}
+                      disabled={loadingList}
+                    >
+                      {loadingList ? "Refreshing…" : "Refresh"}
                     </Button>
                   </div>
-
-                  {analysisError ? (
-                    <div className="mt-2">
-                      <Notice tone="warn">{analysisError}</Notice>
-                    </div>
-                  ) : analysis ? (
-                    <div className="mt-3 space-y-3 text-sm text-slate-700">
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
-                          <div className="text-[11px] font-semibold text-slate-600">
-                            Category
-                          </div>
-                          <div className="mt-1 font-semibold text-slate-800">
-                            {analysis.category || "—"}
-                          </div>
-                        </div>
-                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
-                          <div className="text-[11px] font-semibold text-slate-600">
-                            Risk level
-                          </div>
-                          <div className="mt-1 font-semibold text-slate-800">
-                            {analysis.risk_level || "—"}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200/80 bg-white p-3">
-                        <div className="text-[11px] font-semibold text-slate-600">
-                          Summary
-                        </div>
-                        <div className="mt-1">{analysis.summary || "—"}</div>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200/80 bg-white p-3">
-                        <div className="text-[11px] font-semibold text-slate-600">
-                          Recommendations
-                        </div>
-                        <div className="mt-1 whitespace-pre-wrap">
-                          {analysis.recommendations || "—"}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-2 text-sm text-slate-500">
-                      No analysis found for this requirement.
-                    </div>
-                  )}
                 </div>
+
+                {error && <div className="mt-4"><Notice tone="error">{error}</Notice></div>}
               </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Main layout: sidebar + details */}
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-6 items-start">
+          {/* LEFT: Requirement + Search + List */}
+          <div className="lg:sticky lg:top-[108px] space-y-6">
+            {/* Requirement panel */}
+            {requirementId && (
+              <Card>
+                <CardHeader className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">
+                      Requirement
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Linked test cases only
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    onClick={() => {
+                      loadRequirement();
+                      loadAnalysis();
+                      loadClassification();
+                    }}
+                    disabled={loadingRequirement || analysisLoading || classificationLoading}
+                    className="px-3 py-1.5 text-xs"
+                  >
+                    Refresh
+                  </Button>
+                </CardHeader>
+
+                <CardBody className="space-y-4">
+                  {loadingRequirement ? (
+                    <div className="animate-pulse space-y-2">
+                      <div className="h-4 w-2/3 bg-slate-200 rounded" />
+                      <div className="h-3 w-1/3 bg-slate-200 rounded" />
+                    </div>
+                  ) : requirementError ? (
+                    <Notice tone="warn">{requirementError}</Notice>
+                  ) : requirement ? (
+                    <>
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone="purple">#{requirement.id}</Badge>
+                          <Badge tone="slate">Created: {formatDate(requirement.created_at)}</Badge>
+                          <Badge tone="indigo">
+                            By:{" "}
+                            {safeName(
+                              requirement.created_by_name ??
+                                requirement.creator_name ??
+                                requirement.user_name
+                            )}
+                          </Badge>
+                        </div>
+                        <div className="text-base font-semibold text-slate-900">
+                          {requirement.title || "—"}
+                        </div>
+                      </div>
+
+                      <Disclosure title="Requirement analysis">
+                        {analysisError ? (
+                          <Notice tone="warn">{analysisError}</Notice>
+                        ) : analysis ? (
+                          <div className="space-y-3 text-sm text-slate-700">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
+                                <div className="text-[11px] font-semibold text-slate-600">
+                                  Category
+                                </div>
+                                <div className="mt-1 font-semibold text-slate-800">
+                                  {analysis.category || "—"}
+                                </div>
+                              </div>
+                              <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
+                                <div className="text-[11px] font-semibold text-slate-600">
+                                  Risk level
+                                </div>
+                                <div className="mt-1 font-semibold text-slate-800">
+                                  {analysis.risk_level || "—"}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200/80 bg-white p-3">
+                              <div className="text-[11px] font-semibold text-slate-600">
+                                Summary
+                              </div>
+                              <div className="mt-1">{analysis.summary || "—"}</div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200/80 bg-white p-3">
+                              <div className="text-[11px] font-semibold text-slate-600">
+                                Recommendations
+                              </div>
+                              <div className="mt-1 whitespace-pre-wrap">
+                                {analysis.recommendations || "—"}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-slate-500">No analysis found.</div>
+                        )}
+                      </Disclosure>
+
+                      <Disclosure title="Requirement classification">
+                        {classificationError ? (
+                          <Notice tone="warn">{classificationError}</Notice>
+                        ) : classification ? (
+                          <div className="space-y-3 text-sm text-slate-700">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
+                                <div className="text-[11px] font-semibold text-slate-600">
+                                  Category
+                                </div>
+                                <div className="mt-1 font-semibold text-slate-800">
+                                  {classification.category || "—"}
+                                </div>
+                              </div>
+                              <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
+                                <div className="text-[11px] font-semibold text-slate-600">
+                                  Risk
+                                </div>
+                                <div className="mt-1 font-semibold text-slate-800">
+                                  {classification.risk_level || "—"}
+                                </div>
+                              </div>
+                              <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
+                                <div className="text-[11px] font-semibold text-slate-600">
+                                  Confidence
+                                </div>
+                                <div className="mt-1 font-semibold text-slate-800">
+                                  {typeof classification.confidence === "number"
+                                    ? `${Math.round(classification.confidence * 100)}%`
+                                    : "—"}
+                                </div>
+                              </div>
+                              <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
+                                <div className="text-[11px] font-semibold text-slate-600">
+                                  Created
+                                </div>
+                                <div className="mt-1 font-semibold text-slate-800">
+                                  {classification.created_at
+                                    ? formatDate(classification.created_at)
+                                    : "—"}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200/80 bg-white p-3">
+                              <div className="text-[11px] font-semibold text-slate-600">
+                                Summary
+                              </div>
+                              <div className="mt-1">{classification.summary || "—"}</div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200/80 bg-white p-3">
+                              <div className="text-[11px] font-semibold text-slate-600">
+                                Reasoning
+                              </div>
+                              <div className="mt-1 whitespace-pre-wrap">
+                                {classification.reasoning || "—"}
+                              </div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200/80 bg-white p-3">
+                              <div className="text-[11px] font-semibold text-slate-600">
+                                Recommendations
+                              </div>
+                              <div className="mt-1 whitespace-pre-wrap">
+                                {classification.recommendations || "—"}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-slate-500">No classification found.</div>
+                        )}
+                      </Disclosure>
+                    </>
+                  ) : (
+                    <div className="text-sm text-slate-600">Requirement not found.</div>
+                  )}
+                </CardBody>
+              </Card>
             )}
 
-            {error && <Notice tone="error">{error}</Notice>}
-          </div>
-        </Card>
-
-        {/* GRID */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* LIST */}
-          <div className="lg:col-span-2">
+            {/* Search */}
             <Card>
-              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <CardHeader className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-semibold text-slate-800">
-                    {requirementId ? "Test Cases for Requirement" : "Existing Test Cases"}
+                    Test Cases
                   </div>
                   <div className="text-xs text-slate-500">
-                    {loadingList ? "Loading…" : `${filtered.length} total`}
+                    {loadingList ? "Loading…" : `${filtered.length} shown`}
                   </div>
                 </div>
 
-                <div className="relative w-full sm:w-80">
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search title/description…"
-                    className="w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm
-                               focus:outline-none focus:ring-2 focus:ring-blue-200"
-                  />
-                  <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 text-xs">
-                    ⌘K
-                  </div>
-                </div>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  onClick={() => {
+                    setQuery("");
+                    clearForm();
+                  }}
+                  className="px-3 py-1.5 text-xs"
+                >
+                  Reset
+                </Button>
               </CardHeader>
 
-              <CardBody>
-                {loadingList ? (
-                  <div className="grid gap-3">
-                    {[...Array(3)].map((_, i) => (
-                      <div
-                        key={i}
-                        className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3"
-                      >
-                        <div className="h-4 w-2/3 bg-slate-200 rounded" />
-                        <div className="h-3 w-5/6 bg-slate-200 rounded" />
-                        <div className="h-3 w-3/5 bg-slate-200 rounded" />
-                      </div>
-                    ))}
-                  </div>
-                ) : filtered.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 p-6 text-sm text-slate-500">
-                    {requirementId
-                      ? "No test cases linked to this requirement yet."
-                      : "No test cases found."}
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {filtered.map((tc) => (
-                      <div
+              <CardBody className="space-y-3">
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search title/description…"
+                  className="w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm
+                             focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+
+                {/* Scrollable list area */}
+                <div className="max-h-[55vh] overflow-auto pr-1 space-y-2">
+                  {loadingList ? (
+                    <div className="grid gap-2">
+                      {[...Array(4)].map((_, i) => (
+                        <div
+                          key={i}
+                          className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3"
+                        >
+                          <div className="h-4 w-2/3 bg-slate-200 rounded" />
+                          <div className="h-3 w-5/6 bg-slate-200 rounded" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : filtered.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 p-6 text-sm text-slate-500">
+                      {requirementId
+                        ? "No test cases linked to this requirement yet."
+                        : "No test cases found."}
+                    </div>
+                  ) : (
+                    filtered.map((tc) => (
+                      <button
                         key={tc.id}
-                        className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/80 transition
-                                   hover:shadow-[0_8px_24px_-18px_rgba(15,23,42,0.35)]"
+                        type="button"
+                        onClick={() => populateForEdit(tc)}
+                        className="w-full text-left group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/80 transition
+                                   hover:shadow-[0_8px_24px_-18px_rgba(15,23,42,0.35)] focus:outline-none focus:ring-2 focus:ring-blue-200"
                       >
-                        {/* Priority accent bar */}
                         <div
                           className={cn(
                             "absolute left-0 top-0 h-full w-1.5 bg-gradient-to-b",
                             accentFromPriority(tc.priority)
                           )}
                         />
-
-                        <div className="p-4 pl-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="font-semibold text-slate-900">
+                        <div className="p-3 pl-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-semibold text-slate-900 truncate">
                                 {tc.title || "Untitled"}
                               </div>
-
-                              <Badge tone={toneFromPriority(tc.priority)}>
-                                Priority: {tc.priority || "medium"}
-                              </Badge>
-
-                              <Badge tone={toneFromStatus(tc.status)}>
-                                Status: {tc.status || "active"}
-                              </Badge>
-                            </div>
-
-                            {tc.description && (
-                              <div className="mt-1 text-sm text-slate-600">
-                                {tc.description}
+                              <div className="mt-1 flex flex-wrap gap-2">
+                                <Badge tone={toneFromPriority(tc.priority)}>
+                                  {tc.priority || "medium"}
+                                </Badge>
+                                <Badge tone={toneFromStatus(tc.status)}>
+                                  {tc.status || "active"}
+                                </Badge>
                               </div>
-                            )}
+                            </div>
+                            <div className="text-xs text-slate-400">Edit</div>
                           </div>
-
-                          <div className="flex items-center gap-2 justify-end">
-                            <Button
-                              type="button"
-                              onClick={() => populateForEdit(tc)}
-                              className="px-3 py-1.5 text-xs"
-                            >
-                              Update
-                            </Button>
-
-                            <Button
-                              type="button"
-                              variant="primary"
-                              onClick={() =>
-                                navigate(`/projects/${projectId}/execute?testCaseId=${tc.id}`)
-                              }
-                              className="px-3 py-1.5 text-xs"
-                            >
-                              Execute
-                            </Button>
-
-                            <Button
-                              type="button"
-                              variant="dangerOutline"
-                              onClick={() => onDelete(tc.id)}
-                              className="px-3 py-1.5 text-xs"
-                            >
-                              Delete
-                            </Button>
-                          </div>
+                          {tc.description && (
+                            <div className="mt-2 text-sm text-slate-600 line-clamp-2">
+                              {tc.description}
+                            </div>
+                          )}
                         </div>
-
-                        <div className="px-4 pb-4 pl-5">
-                          <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 space-y-4">
-                            <div>
-                              <div className="text-sm font-semibold text-slate-700">
-                                Preconditions
-                              </div>
-                              {tc.preconditions?.length ? (
-                                <ul className="mt-1 list-disc pl-5 text-sm text-slate-700">
-                                  {tc.preconditions.map((p, i) => (
-                                    <li key={i}>{p}</li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <div className="mt-1 text-sm text-slate-500">—</div>
-                              )}
-                            </div>
-
-                            <div>
-                              <div className="text-sm font-semibold text-slate-700">Steps</div>
-                              {tc.steps?.length ? (
-                                <ol className="mt-1 list-decimal pl-5 text-sm text-slate-700">
-                                  {tc.steps.map((s, i) => (
-                                    <li key={i}>{s}</li>
-                                  ))}
-                                </ol>
-                              ) : (
-                                <div className="mt-1 text-sm text-slate-500">—</div>
-                              )}
-                            </div>
-
-                            <div>
-                              <div className="text-sm font-semibold text-slate-700">
-                                Expected Result
-                              </div>
-                              <div className="mt-1 text-sm text-slate-700">
-                                {tc.expected_result || "—"}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      </button>
+                    ))
+                  )}
+                </div>
               </CardBody>
             </Card>
           </div>
 
-          {/* FORM */}
-          <div id="tc-form">
-            <Card>
+          {/* RIGHT: Detail + Form */}
+          <div id="tc-form" className="space-y-6">
+            {/* Form */}
+            <Card className="lg:sticky lg:top-[108px]">
               <CardHeader className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-semibold text-slate-800">
@@ -746,7 +808,7 @@ export default function ManageTestCases() {
                   </div>
                   <div className="text-xs text-slate-500">
                     {requirementId
-                      ? "New items will be linked to the selected requirement."
+                      ? "New items link to the selected requirement."
                       : "Creates test cases for the project."}
                   </div>
                 </div>
@@ -868,7 +930,47 @@ export default function ManageTestCases() {
                   <Button type="button" variant="secondary" onClick={clearForm}>
                     Clear
                   </Button>
+
+                  {editingId && (
+                    <Button
+                      type="button"
+                      variant="dangerOutline"
+                      onClick={() => onDelete(editingId)}
+                      disabled={saving}
+                    >
+                      Delete
+                    </Button>
+                  )}
                 </div>
+
+                {editingId && (
+                  <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        onClick={() =>
+                          navigate(`/projects/${projectId}/execute?testCaseId=${editingId}`)
+                        }
+                        className="px-3 py-1.5 text-xs"
+                      >
+                        Execute
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => fetchList()}
+                        className="px-3 py-1.5 text-xs"
+                      >
+                        Sync
+                      </Button>
+                    </div>
+
+                    <div className="text-xs text-slate-500">
+                      Tip: Click a test case on the left to load it here for editing.
+                    </div>
+                  </div>
+                )}
 
                 {requirementId && (
                   <div className="text-xs text-slate-500">
@@ -879,15 +981,108 @@ export default function ManageTestCases() {
                 )}
               </form>
             </Card>
+
+            {/* Full expanded list (optional): keep your detailed rendering, but now in a dedicated panel */}
+            <Card>
+              <CardHeader>
+                <div className="text-sm font-semibold text-slate-800">Details</div>
+                <div className="text-xs text-slate-500">
+                  Expand a test case below to see steps and expected results.
+                </div>
+              </CardHeader>
+
+              <CardBody className="space-y-3">
+                {filtered.slice(0, 20).map((tc) => (
+                  <Disclosure
+                    key={tc.id}
+                    title={`${tc.title || "Untitled"}  ·  ${tc.priority || "medium"}  ·  ${tc.status || "active"}`}
+                  >
+                    <div className="space-y-4 text-sm text-slate-700">
+                      {tc.description && (
+                        <div>
+                          <div className="text-[11px] font-semibold text-slate-600">Description</div>
+                          <div className="mt-1">{tc.description}</div>
+                        </div>
+                      )}
+
+                      <div>
+                        <div className="text-[11px] font-semibold text-slate-600">Preconditions</div>
+                        {tc.preconditions?.length ? (
+                          <ul className="mt-1 list-disc pl-5">
+                            {tc.preconditions.map((p, i) => (
+                              <li key={i}>{p}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="mt-1 text-slate-500">—</div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="text-[11px] font-semibold text-slate-600">Steps</div>
+                        {tc.steps?.length ? (
+                          <ol className="mt-1 list-decimal pl-5">
+                            {tc.steps.map((s, i) => (
+                              <li key={i}>{s}</li>
+                            ))}
+                          </ol>
+                        ) : (
+                          <div className="mt-1 text-slate-500">—</div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="text-[11px] font-semibold text-slate-600">Expected Result</div>
+                        <div className="mt-1">{tc.expected_result || "—"}</div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button
+                          type="button"
+                          onClick={() => populateForEdit(tc)}
+                          className="px-3 py-1.5 text-xs"
+                        >
+                          Update
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="primary"
+                          onClick={() =>
+                            navigate(`/projects/${projectId}/execute?testCaseId=${tc.id}`)
+                          }
+                          className="px-3 py-1.5 text-xs"
+                        >
+                          Execute
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="dangerOutline"
+                          onClick={() => onDelete(tc.id)}
+                          className="px-3 py-1.5 text-xs"
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  </Disclosure>
+                ))}
+
+                {filtered.length > 20 && (
+                  <div className="text-xs text-slate-500">
+                    Showing first 20 in details panel to keep UI fast. (Left list still shows all.)
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+
+            {requirementId && (
+              <div className="text-xs text-slate-500">
+                If you still see all test cases, make sure the backend returns{" "}
+                <code className="font-mono">requirement_id</code> in the test case list response.
+              </div>
+            )}
           </div>
         </div>
-
-        {requirementId && (
-          <div className="text-xs text-slate-500">
-            If you still see all test cases, make sure the backend returns{" "}
-            <code className="font-mono">requirement_id</code> in the test case list response.
-          </div>
-        )}
       </div>
     </div>
   );

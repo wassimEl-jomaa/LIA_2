@@ -6,6 +6,12 @@ from fastapi import HTTPException
 from openai import OpenAI
 import openai as _openai_pkg
 from dotenv import load_dotenv, find_dotenv
+from sqlalchemy.orm import Session
+from sqlalchemy import desc, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Requirement, ClassifyRequirement
+from app.classify_requirement_service import normalize
 
 # Load environment variables from a .env file located in this folder or parent folders
 dotenv_path = find_dotenv()
@@ -16,6 +22,8 @@ else:
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 
+RISK_LEVELS = {"low", "medium", "high", "critical"}
+
 SYSTEM_BASE = """You are a senior QA engineer and test lead.
 You design actionable, realistic test cases.
 
@@ -23,7 +31,7 @@ Rules:
 - Output VALID JSON ONLY (no markdown, no comments, no extra text).
 - Use the exact keys requested. Do not invent new keys.
 - Steps must be a list of short, imperative actions (no long paragraphs).
-- Preconditions must be a list (may be empty).
+- Preconditions must be a list. Include at least one meaningful precondition for each test case (e.g., "User is on the search screen"). Only leave it empty if truly none apply.
 - expected_result must be a single string.
 - priority must be one of: "low", "medium", "high", "critical".
 - status must be one of: "active", "draft", "inactive", "deprecated".
@@ -38,6 +46,25 @@ def _try_parse_json(text: str) -> Optional[Any]:
         return json.loads(text)
     except Exception:
         return None
+
+def build_prompt(req: Requirement, include_recommendations: bool) -> str:
+  return f"""
+You are a senior QA analyst.
+
+Classify the requirement and return STRICT JSON only:
+{{
+  "category": "functional|security|performance|usability|reliability|other",
+  "risk_level": "low|medium|high|critical",
+  "confidence": 0.0-1.0,
+  "summary": "...",
+  "reasoning": "...",
+  {"\"recommendations\": \"...\", " if include_recommendations else ""}
+}}
+
+Requirement title: {req.title}
+Requirement description: {req.description}
+Acceptance criteria: {req.acceptance_criteria or ""}
+""".strip()
 
 def call_ai_json(user_prompt: str) -> Tuple[str, Optional[Any]]:
     """
@@ -177,6 +204,10 @@ def call_ai_json(user_prompt: str) -> Tuple[str, Optional[Any]]:
 
         raise HTTPException(status_code=502, detail=error_msg) from e
 
+def run_ai_json(user_prompt: str) -> Tuple[Optional[Any], str]:
+    raw, parsed = call_ai_json(user_prompt)
+    return parsed, MODEL
+
 def prompt_testcases(requirement: str) -> str:
     return f"""
 Generate a compact, high-quality test suite from the requirement below.
@@ -189,6 +220,7 @@ CONSTRAINTS:
 - Include a mix: Functional + Negative + Boundary (and Security/Performance when relevant).
 - Prefer end-to-end user flows, but add API/validation cases if implied (email formats, rate limits, token expiry, etc.).
 - Do not repeat the same test case idea with different wording.
+- Add at least one meaningful precondition per test case (e.g., "User is on the search screen") unless none apply.
 
 OUTPUT JSON EXACTLY in this schema:
 {{
@@ -336,3 +368,61 @@ SELF-CHECK:
 - JSON parses
 - severity values are only low/medium/high/critical
 """
+
+async def generate_classification_and_store(
+  db: AsyncSession,
+  project_id: int,
+  requirement_id: int,
+  force: bool,
+  include_recommendations: bool,
+) -> ClassifyRequirement:
+  req = (
+    await db.execute(
+      select(Requirement).where(
+        Requirement.id == requirement_id,
+        Requirement.project_id == project_id,
+      )
+    )
+  ).scalars().first()
+  if not req:
+    raise HTTPException(status_code=404, detail="Requirement not found in project")
+
+  if not force:
+    latest = (
+      await db.execute(
+        select(ClassifyRequirement)
+        .where(ClassifyRequirement.requirement_id == requirement_id)
+        .order_by(desc(ClassifyRequirement.created_at))
+      )
+    ).scalars().first()
+    if latest:
+      return latest
+
+  prompt = build_prompt(req, include_recommendations)
+
+  # ✅ Use YOUR existing AI function here.
+  # Replace this import/call with whatever you already use to call AI.
+  from app.ai import run_ai_json  # <-- adjust to your project
+  parsed_json, model_name = run_ai_json(prompt)
+
+  if not isinstance(parsed_json, dict):
+    raise HTTPException(status_code=502, detail="AI returned invalid JSON")
+
+  clean = normalize(parsed_json)
+
+  row = ClassifyRequirement(
+    project_id=project_id,
+    requirement_id=requirement_id,
+    category=clean["category"],
+    risk_level=clean["risk_level"],
+    confidence=clean["confidence"],
+    summary=clean["summary"],
+    reasoning=clean["reasoning"],
+    recommendations=clean["recommendations"],
+    raw_json=parsed_json,
+    model_name=model_name,
+  )
+  db.add(row)
+  await db.commit()
+  await db.refresh(row)
+  return row
