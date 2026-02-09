@@ -804,7 +804,7 @@ export default function ManageTestCases() {
               <CardHeader className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-semibold text-slate-800">
-                    {editingId ? "Edit Test Case" : "Create Test Case"}
+                    {editingId ? "Edit Test Case" : "Test Case"}
                   </div>
                   <div className="text-xs text-slate-500">
                     {requirementId

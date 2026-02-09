@@ -23,6 +23,7 @@ from .requirement_analysis import router as requirement_analysis_router
 from .project_sharing import router as project_sharing_router
 from .test_executions import router as test_executions_router
 from .classify_requirement import router as classify_requirements_router
+from .bug_reports import router as bug_reports_router
 from .ml import predict_category
 from .schemas import RequirementPredictIn, RequirementPredictOut
 from .models import User, Project
@@ -64,6 +65,7 @@ app.include_router(test_executions_router)
 app.include_router(history_router)
 app.include_router(requirement_analysis_router)
 app.include_router(classify_requirements_router)
+app.include_router(bug_reports_router)
 # DEBUG: show full traceback in Swagger when 500 happens
 @app.exception_handler(Exception)
 async def debug_exception_handler(request: Request, exc: Exception):

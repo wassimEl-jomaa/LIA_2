@@ -7,7 +7,7 @@ import {
   updateTestExecution,
 } from "../api";
 
-/** ---------- UI helpers (layout + colors) ---------- */
+/** ---------- UI helpers ---------- */
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
 }
@@ -26,11 +26,7 @@ function Card({ className, children }) {
 }
 
 function CardHeader({ className, children }) {
-  return (
-    <div className={cn("px-6 py-4 border-b border-slate-100/80", className)}>
-      {children}
-    </div>
-  );
+  return <div className={cn("px-6 py-4 border-b border-slate-100/80", className)}>{children}</div>;
 }
 
 function CardBody({ className, children }) {
@@ -74,6 +70,8 @@ function Button({ variant = "primary", className, ...props }) {
       "bg-white/80 text-slate-800 border border-slate-200 hover:bg-white focus:ring-slate-300",
     ghost:
       "bg-transparent text-slate-700 hover:bg-slate-100/70 border border-transparent focus:ring-slate-300",
+    danger:
+      "bg-gradient-to-r from-rose-600 to-pink-600 text-white shadow-sm hover:from-rose-700 hover:to-pink-700 focus:ring-rose-300",
   };
 
   return <button className={cn(base, variants[variant], className)} {...props} />;
@@ -105,7 +103,6 @@ function toneFromResult(result) {
       return "amber";
     case "skipped":
       return "slate";
-    case "pending":
     default:
       return "blue";
   }
@@ -121,10 +118,30 @@ function accentFromLatestResult(result) {
       return "from-amber-400 to-yellow-300";
     case "skipped":
       return "from-slate-400 to-slate-200";
-    case "pending":
     default:
       return "from-blue-500 to-indigo-400";
   }
+}
+
+function titleFromResultLower(resultLower) {
+  switch ((resultLower || "").toLowerCase()) {
+    case "passed":
+      return "Passed";
+    case "failed":
+      return "Failed";
+    case "blocked":
+      return "Blocked";
+    case "skipped":
+      return "Skipped";
+    default:
+      return "Pending";
+  }
+}
+
+function formatEnvironmentSummary(env) {
+  if (!env || typeof env !== "object") return "";
+  const parts = [env.os, env.browser, env.device].filter(Boolean);
+  return parts.join(" • ");
 }
 
 /** ---------- Page ---------- */
@@ -140,14 +157,110 @@ export default function ExecuteTestCases() {
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState("");
-  const [notesByCase, setNotesByCase] = useState({});
+  const [toast, setToast] = useState("");
 
+  const [globalNotes, setGlobalNotes] = useState("");
+  const [globalStatus, setGlobalStatus] = useState("auto");
+  const [testRunId, setTestRunId] = useState(null);
+
+  // filters/search
+  const [q, setQ] = useState("");
+  const [resultFilter, setResultFilter] = useState("all"); // all/passed/failed/blocked/skipped/pending
+
+  // global metadata: fill once for all cases (can override per case later)
+  const [globalMeta, setGlobalMeta] = useState({
+    build_number: "",
+    git_sha: "",
+    branch: "",
+    ci_run_id: "",
+    job_url: "",
+    environment_json_text: "",
+    artifacts_links: [],
+  });
+
+  // per-case metadata overrides
+  const [metaByCase, setMetaByCase] = useState({});
+  const [showMetaByCase, setShowMetaByCase] = useState({});
+
+  // edit existing execution
   const [editingExecId, setEditingExecId] = useState(null);
-  const [editResult, setEditResult] = useState("Pending");
+  const [editResult, setEditResult] = useState("pending");
   const [editNotes, setEditNotes] = useState("");
+
+  const [selectedExecutionByCase, setSelectedExecutionByCase] = useState({});
+
+  const environmentPresets = [
+    {
+      key: "win_chrome",
+      label: "Windows 11 • Chrome 121 • Desktop",
+      value: {
+        os: "Windows 11",
+        browser: "Chrome 121",
+        device: "Desktop",
+        locale: "en-US",
+      },
+    },
+    {
+      key: "win_edge",
+      label: "Windows 11 • Edge 121 • Desktop",
+      value: {
+        os: "Windows 11",
+        browser: "Edge 121",
+        device: "Desktop",
+        locale: "en-US",
+      },
+    },
+    {
+      key: "mac_safari",
+      label: "macOS 14 • Safari 17 • MacBook",
+      value: {
+        os: "macOS 14",
+        browser: "Safari 17",
+        device: "MacBook",
+        locale: "en-US",
+      },
+    },
+    {
+      key: "android_chrome",
+      label: "Android 14 • Chrome 121 • Pixel",
+      value: {
+        os: "Android 14",
+        browser: "Chrome 121",
+        device: "Pixel",
+        locale: "en-US",
+      },
+    },
+    {
+      key: "ios_safari",
+      label: "iOS 17 • Safari • iPhone",
+      value: {
+        os: "iOS 17",
+        browser: "Safari",
+        device: "iPhone",
+        locale: "en-US",
+      },
+    },
+  ];
+  const [environmentPresetKey, setEnvironmentPresetKey] = useState("");
+
+  function setMeta(testCaseId, patch) {
+    setMetaByCase((prev) => ({
+      ...prev,
+      [testCaseId]: { ...(prev[testCaseId] || {}), ...patch },
+    }));
+  }
+
+  function showToast(msg) {
+    setToast(msg);
+    window.clearTimeout(showToast._t);
+    showToast._t = window.setTimeout(() => setToast(""), 2500);
+  }
 
   useEffect(() => {
     if (!projectId) return;
+    const key = `legacy_test_run_id_project_${projectId}`;
+    const saved = localStorage.getItem(key);
+    if (saved && Number(saved)) setTestRunId(Number(saved));
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -161,8 +274,18 @@ export default function ExecuteTestCases() {
         listTestCases({ projectId: pid, limit: 200 }),
         listTestExecutions({ projectId: pid, limit: 500 }),
       ]);
+
       setItems(Array.isArray(tcList) ? tcList : []);
       setExecutions(Array.isArray(execList) ? execList : []);
+
+      // default run from existing executions
+      if (!testRunId && Array.isArray(execList) && execList.length) {
+        const firstRun = execList.find((x) => x?.test_run_id)?.test_run_id;
+        if (firstRun) {
+          setTestRunId(firstRun);
+          localStorage.setItem(`legacy_test_run_id_project_${projectId}`, String(firstRun));
+        }
+      }
     } catch (e) {
       setError(e?.message || "Failed to load test cases");
     } finally {
@@ -170,8 +293,26 @@ export default function ExecuteTestCases() {
     }
   }
 
-  // NOTE: Your original logic keeps the *first* seen as "latest".
-  // If your API returns newest-first, that's correct. Otherwise, sort by date.
+  // Build an "attempt index": attempt = max+1 within the same (test_run_id, test_case_id)
+  const nextAttemptByCase = useMemo(() => {
+    const map = new Map();
+    for (const ex of executions) {
+      if (!ex?.test_case_id) continue;
+      if (!testRunId) continue;
+      if (Number(ex.test_run_id) !== Number(testRunId)) continue;
+
+      const tcId = Number(ex.test_case_id);
+      const attempt = Number(ex.attempt || 1);
+      const cur = map.get(tcId) || 0;
+      if (attempt > cur) map.set(tcId, attempt);
+    }
+    const next = new Map();
+    for (const [tcId, maxAttempt] of map.entries()) {
+      next.set(tcId, maxAttempt + 1);
+    }
+    return next;
+  }, [executions, testRunId]);
+
   const latestByCase = useMemo(() => {
     const map = new Map();
     for (const ex of executions) {
@@ -192,39 +333,128 @@ export default function ExecuteTestCases() {
     return map;
   }, [executions]);
 
-  const visibleItems = useMemo(() => {
-    if (!testCaseIdFilter || !Number.isFinite(testCaseIdFilter)) return items;
-    return items.filter((tc) => Number(tc.id) === testCaseIdFilter);
-  }, [items, testCaseIdFilter]);
-
   const selectedCase = useMemo(() => {
     if (!testCaseIdFilter || !Number.isFinite(testCaseIdFilter)) return null;
     return items.find((tc) => Number(tc.id) === testCaseIdFilter) || null;
   }, [items, testCaseIdFilter]);
 
+  const visibleItems = useMemo(() => {
+    let list = items;
+
+    // filter by URL testCaseId
+    if (testCaseIdFilter && Number.isFinite(testCaseIdFilter)) {
+      list = list.filter((tc) => Number(tc.id) === testCaseIdFilter);
+    }
+
+    // search
+    const qq = (q || "").trim().toLowerCase();
+    if (qq) {
+      list = list.filter(
+        (tc) =>
+          String(tc.title || "").toLowerCase().includes(qq) ||
+          String(tc.description || "").toLowerCase().includes(qq) ||
+          String(tc.id).includes(qq)
+      );
+    }
+
+    // result filter (based on latest result)
+    if (resultFilter !== "all") {
+      list = list.filter((tc) => {
+        const latest = latestByCase.get(tc.id);
+        const lr = String(latest?.result || "pending").toLowerCase();
+        return lr === resultFilter;
+      });
+    }
+
+    return list;
+  }, [items, testCaseIdFilter, q, resultFilter, latestByCase]);
+
   const resultButtons = [
-    { label: "Passed", className: "from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 focus:ring-emerald-200" },
-    { label: "Failed", className: "from-rose-600 to-rose-500 hover:from-rose-700 hover:to-rose-600 focus:ring-rose-200" },
-    { label: "Blocked", className: "from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 focus:ring-amber-200" },
-    { label: "Skipped", className: "from-slate-700 to-slate-600 hover:from-slate-800 hover:to-slate-700 focus:ring-slate-200" },
-    { label: "Pending", className: "from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:ring-blue-200" },
+    { value: "passed", label: "Passed", className: "from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 focus:ring-emerald-200" },
+    { value: "failed", label: "Failed", className: "from-rose-600 to-rose-500 hover:from-rose-700 hover:to-rose-600 focus:ring-rose-200" },
+    { value: "blocked", label: "Blocked", className: "from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 focus:ring-amber-200" },
+    { value: "skipped", label: "Skipped", className: "from-slate-700 to-slate-600 hover:from-slate-800 hover:to-slate-700 focus:ring-slate-200" },
+    { value: "pending", label: "Pending", className: "from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:ring-blue-200" },
   ];
 
-  async function handleExecute(testCaseId, result) {
+  function parseJsonOrNull(label, text) {
+    const t = (text || "").trim();
+    if (!t) return null;
+    try {
+      return JSON.parse(t);
+    } catch {
+      throw new Error(`${label} is not valid JSON`);
+    }
+  }
+
+  function mergedMetaForCase(testCaseId) {
+    const local = metaByCase[testCaseId] || {};
+    // local overrides global; use *_text fields for JSON
+    return {
+      build_number: local.build_number ?? globalMeta.build_number,
+      git_sha: local.git_sha ?? globalMeta.git_sha,
+      branch: local.branch ?? globalMeta.branch,
+      ci_run_id: local.ci_run_id ?? globalMeta.ci_run_id,
+      job_url: local.job_url ?? globalMeta.job_url,
+      environment_json_text: local.environment_json_text ?? globalMeta.environment_json_text,
+      artifacts_links: local.artifacts_links ?? globalMeta.artifacts_links,
+    };
+  }
+
+  async function handleExecute(testCaseId, resultLower) {
     if (!projectId) return;
+    if (!testRunId) {
+      setError("No test_run_id available. Create/choose a Test Run first.");
+      return;
+    }
+
     setSavingId(testCaseId);
     setError("");
+
     try {
-      const noteValue = (notesByCase[testCaseId] || "").trim();
+      const noteValue = (globalNotes || "").trim();
+      const meta = mergedMetaForCase(testCaseId);
+
+      const environment_json = parseJsonOrNull("Environment JSON", meta.environment_json_text);
+      const artifacts = Array.isArray(meta.artifacts_links) && meta.artifacts_links.length
+        ? { links: meta.artifacts_links }
+        : null;
+
+      // ✅ auto attempt (max+1 per test case within same run)
+      const attemptGuess = nextAttemptByCase.get(Number(testCaseId)) || 1;
+
       const payload = {
         project_id: Number(projectId),
         test_case_id: Number(testCaseId),
-        result,
+        test_run_id: Number(testRunId),
+
+        status:
+          globalStatus === "auto"
+            ? resultLower === "pending"
+              ? "running"
+              : "completed"
+            : globalStatus,
+        result: resultLower,
         notes: noteValue || null,
+
+        environment_json,
+        build_number: meta.build_number || null,
+        git_sha: meta.git_sha || null,
+        branch: meta.branch || null,
+        ci_run_id: meta.ci_run_id || null,
+        job_url: meta.job_url || null,
+        artifacts,
+        attempt: attemptGuess,
       };
+
       const created = await createTestExecution(payload);
       setExecutions((prev) => [created, ...prev]);
-      if (noteValue) setNotesByCase((prev) => ({ ...prev, [testCaseId]: "" }));
+
+      // keep metadata (global) but clear per-case overrides by default
+      setMetaByCase((prev) => ({ ...prev, [testCaseId]: {} }));
+      setShowMetaByCase((prev) => ({ ...prev, [testCaseId]: false }));
+
+      showToast(`Saved execution: ${titleFromResultLower(resultLower)} (attempt ${created?.attempt ?? payload.attempt})`);
     } catch (e) {
       setError(e?.message || "Failed to create execution");
     } finally {
@@ -232,19 +462,19 @@ export default function ExecuteTestCases() {
     }
   }
 
-  async function saveExecutionEdit(execution, projectIdValue) {
+  async function saveExecutionEdit(execution) {
     setSavingId(execution.id);
     setError("");
     try {
       const payload = {
-        project_id: Number(projectIdValue),
-        test_case_id: Number(execution.test_case_id),
         result: editResult,
         notes: editNotes?.trim() || null,
+        status: editResult === "pending" ? "running" : "completed",
       };
       const updated = await updateTestExecution(execution.id, payload);
       setExecutions((prev) => prev.map((ex) => (ex.id === updated.id ? updated : ex)));
       setEditingExecId(null);
+      showToast("Execution updated");
     } catch (e) {
       setError(e?.message || "Failed to update execution");
     } finally {
@@ -270,17 +500,17 @@ export default function ExecuteTestCases() {
                       Execute Test Cases
                     </h2>
                     <p className="text-sm text-slate-600">
-                      Click a result to record a test execution for each test case.
+                      Faster runs: choose a Test Run, set global metadata once, then click results.
                     </p>
                   </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
                   <Badge tone="blue">Project: {projectId || "—"}</Badge>
-                  {testCaseIdFilter ? (
-                    <Badge tone="purple">Filter: TestCase #{testCaseIdFilter}</Badge>
+                  {testRunId ? (
+                    <Badge tone="indigo">Test Run: #{testRunId}</Badge>
                   ) : (
-                    <Badge tone="slate">All test cases</Badge>
+                    <Badge tone="amber">No Test Run selected</Badge>
                   )}
                   <Badge tone="green">{visibleItems.length} shown</Badge>
                 </div>
@@ -290,84 +520,364 @@ export default function ExecuteTestCases() {
                 <Button variant="secondary" onClick={fetchData} disabled={loading}>
                   {loading ? "Refreshing…" : "Refresh"}
                 </Button>
-                <Button
-                  onClick={() => navigate(projectId ? `/projects/${projectId}` : "/projects")}
-                >
+                <Button onClick={() => navigate(projectId ? `/projects/${projectId}` : "/projects")}>
                   Back to Project
                 </Button>
               </div>
             </div>
 
-            {error && <Notice tone="error">{error}</Notice>}
-          </div>
-        </Card>
-
-        {/* Selected test case detail */}
-        {testCaseIdFilter && (
-          <Card>
-            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <div className="text-sm font-semibold text-slate-800">Selected test case</div>
-                <div className="text-sm text-slate-700">
-                  {selectedCase ? (
-                    <span className="font-semibold">
-                      #{selectedCase.id}: {selectedCase.title || "Untitled"}
-                    </span>
-                  ) : (
-                    "Loading…"
-                  )}
+            {/* Top controls */}
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200/70 bg-white/70 p-4">
+                <div className="text-xs font-semibold text-slate-600">Test Run ID</div>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    value={testRunId ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      const n = v === "" ? null : Number(v);
+                      setTestRunId(Number.isFinite(n) ? n : null);
+                    }}
+                    placeholder="e.g. 3"
+                    className="w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
+                  />
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      if (projectId && testRunId) {
+                        localStorage.setItem(
+                          `legacy_test_run_id_project_${projectId}`,
+                          String(testRunId)
+                        );
+                        showToast("Saved Test Run ID");
+                      }
+                    }}
+                    disabled={!projectId || !testRunId}
+                  >
+                    Save
+                  </Button>
+                </div>
+                <div className="mt-2 text-[11px] text-slate-500">
+                  (Temporary) Until you build a real Test Runs page.
                 </div>
               </div>
 
-              {selectedCase && (
-                <div className="flex items-center gap-2">
-                  <Badge tone="indigo">
-                    Executions: {executionsByCase.get(selectedCase.id)?.length || 0}
-                  </Badge>
+              <div className="rounded-2xl border border-slate-200/70 bg-white/70 p-4">
+                <div className="text-xs font-semibold text-slate-600">Search</div>
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search by title, description, id…"
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/70 bg-white/70 p-4">
+                <div className="text-xs font-semibold text-slate-600">Filter by latest result</div>
+                <select
+                  value={resultFilter}
+                  onChange={(e) => setResultFilter(e.target.value)}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
+                >
+                  {["all", "passed", "failed", "blocked", "skipped", "pending"].map((v) => (
+                    <option key={v} value={v}>
+                      {v === "all" ? "All" : titleFromResultLower(v)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {error && <Notice tone="error">{error}</Notice>}
+            {toast && <Notice tone="success">{toast}</Notice>}
+          </div>
+        </Card>
+
+        {/* Selected test case detail (kept) */}
+        {testCaseIdFilter && selectedCase && (
+          <Card>
+            <CardHeader className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-800">Selected test case</div>
+                <div className="text-sm text-slate-700 font-semibold">
+                  #{selectedCase.id}: {selectedCase.title || "Untitled"}
                 </div>
-              )}
+              </div>
+              <Badge tone="indigo">
+                Executions: {executionsByCase.get(selectedCase.id)?.length || 0}
+              </Badge>
             </CardHeader>
+            <CardBody className="pt-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200/70 bg-white/70 p-4">
+                  <div className="text-xs font-semibold text-slate-600">Preconditions</div>
+                  {selectedCase.preconditions?.length ? (
+                    <ul className="mt-2 list-disc pl-5 text-sm text-slate-700">
+                      {selectedCase.preconditions.map((p, i) => (
+                        <li key={i}>{p}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="mt-2 text-sm text-slate-500">—</div>
+                  )}
+                </div>
 
-            {selectedCase && (
-              <CardBody className="pt-4">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <div className="rounded-2xl border border-slate-200/70 bg-white/70 p-4">
-                    <div className="text-xs font-semibold text-slate-600">Preconditions</div>
-                    {selectedCase.preconditions?.length ? (
-                      <ul className="mt-2 list-disc pl-5 text-sm text-slate-700">
-                        {selectedCase.preconditions.map((p, i) => (
-                          <li key={i}>{p}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="mt-2 text-sm text-slate-500">—</div>
-                    )}
-                  </div>
+                <div className="rounded-2xl border border-slate-200/70 bg-white/70 p-4 md:col-span-2">
+                  <div className="text-xs font-semibold text-slate-600">Steps</div>
+                  {selectedCase.steps?.length ? (
+                    <ol className="mt-2 list-decimal pl-5 text-sm text-slate-700">
+                      {selectedCase.steps.map((s, i) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <div className="mt-2 text-sm text-slate-500">—</div>
+                  )}
 
-                  <div className="rounded-2xl border border-slate-200/70 bg-white/70 p-4 md:col-span-2">
-                    <div className="text-xs font-semibold text-slate-600">Steps</div>
-                    {selectedCase.steps?.length ? (
-                      <ol className="mt-2 list-decimal pl-5 text-sm text-slate-700">
-                        {selectedCase.steps.map((s, i) => (
-                          <li key={i}>{s}</li>
-                        ))}
-                      </ol>
-                    ) : (
-                      <div className="mt-2 text-sm text-slate-500">—</div>
-                    )}
-
-                    <div className="mt-4 rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
-                      <div className="text-xs font-semibold text-slate-600">Expected Result</div>
-                      <div className="mt-1 text-sm text-slate-700">
-                        {selectedCase.expected_result || "—"}
-                      </div>
-                    </div>
+                  <div className="mt-4 rounded-xl border border-slate-200/70 bg-slate-50/60 p-3">
+                    <div className="text-xs font-semibold text-slate-600">Expected Result</div>
+                    <div className="mt-1 text-sm text-slate-700">{selectedCase.expected_result || "—"}</div>
                   </div>
                 </div>
-              </CardBody>
-            )}
+              </div>
+            </CardBody>
           </Card>
         )}
+
+
+        {/* Global metadata */}
+        <Card>
+          <CardHeader className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Global metadata (applies to new executions)</div>
+              <div className="text-xs text-slate-600">Fill once; you can override per test case.</div>
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                setGlobalMeta({
+                  build_number: "",
+                  git_sha: "",
+                  branch: "",
+                  ci_run_id: "",
+                  job_url: "",
+                  environment_json_text: "",
+                  artifacts_links: [],
+                })
+              }
+            >
+              Clear
+            </Button>
+          </CardHeader>
+          <CardBody className="pt-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600">Build number</label>
+                <input
+                  value={globalMeta.build_number}
+                  onChange={(e) => setGlobalMeta((p) => ({ ...p, build_number: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
+                  placeholder="e.g. 1.4.2"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600">Branch</label>
+                <input
+                  value={globalMeta.branch}
+                  onChange={(e) => setGlobalMeta((p) => ({ ...p, branch: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
+                  placeholder="e.g. main"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600">Git SHA</label>
+                <input
+                  value={globalMeta.git_sha}
+                  onChange={(e) => setGlobalMeta((p) => ({ ...p, git_sha: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
+                  placeholder="e.g. a45f2d3"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-600">CI run id</label>
+                <input
+                  value={globalMeta.ci_run_id}
+                  onChange={(e) => setGlobalMeta((p) => ({ ...p, ci_run_id: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
+                  placeholder="e.g. 987654"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="text-[11px] font-semibold text-slate-600">Job URL</label>
+                <input
+                  value={globalMeta.job_url}
+                  onChange={(e) => setGlobalMeta((p) => ({ ...p, job_url: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
+                  placeholder="https://..."
+                />
+              </div>
+
+              <div className="md:col-span-3">
+                <label className="text-[11px] font-semibold text-slate-600">Environment</label>
+                <select
+                  value={environmentPresetKey}
+                  onChange={(e) => {
+                    const key = e.target.value;
+                    setEnvironmentPresetKey(key);
+                    const selected = environmentPresets.find((p) => p.key === key);
+                    if (selected) {
+                      setGlobalMeta((p) => ({
+                        ...p,
+                        environment_json_text: JSON.stringify(selected.value, null, 2),
+                      }));
+                    }
+                  }}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
+                >
+                  <option value="">Select environment…</option>
+                  {environmentPresets.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+                <textarea
+                  value={globalMeta.environment_json_text}
+                  onChange={(e) => setGlobalMeta((p) => ({ ...p, environment_json_text: e.target.value }))}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm font-mono"
+                  placeholder='{"os":"Windows 11","browser":"Chrome 121"}'
+                  rows={3}
+                />
+                <div className="mt-2 text-[11px] text-slate-500">
+                  Pick from the list or edit the JSON.
+                </div>
+              </div>
+
+              <div className="md:col-span-3">
+                <label className="text-[11px] font-semibold text-slate-600">Artifacts</label>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <label className="relative inline-flex cursor-pointer items-center rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-[11px] font-semibold text-slate-700 hover:bg-white">
+                    Add photo/video
+                    <input
+                      type="file"
+                      accept="image/*,video/*"
+                      multiple
+                      className="absolute inset-0 cursor-pointer opacity-0"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (!files.length) return;
+                        const urls = files.map((f) => URL.createObjectURL(f));
+                        setGlobalMeta((p) => ({
+                          ...p,
+                          artifacts_links: [...(p.artifacts_links || []), ...urls],
+                        }));
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+
+                {globalMeta.artifacts_links?.length ? (
+                  <div className="mt-3 space-y-2">
+                    {globalMeta.artifacts_links.map((link, idx) => (
+                      <div key={`${link}-${idx}`} className="flex items-center justify-between rounded-xl border border-slate-200/70 bg-white/70 px-3 py-2 text-xs">
+                        <a href={link} target="_blank" rel="noreferrer" className="truncate text-blue-600 hover:underline">
+                          {link}
+                        </a>
+                        <Button
+                          variant="ghost"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() =>
+                            setGlobalMeta((p) => ({
+                              ...p,
+                              artifacts_links: p.artifacts_links.filter((_, i) => i !== idx),
+                            }))
+                          }
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-2 text-[11px] text-slate-500">No artifacts added yet.</div>
+                )}
+              </div>
+
+              <div className="md:col-span-3">
+                <label className="text-[11px] font-semibold text-slate-600">Notes (applies to new executions)</label>
+                <input
+                  value={globalNotes}
+                  onChange={(e) => setGlobalNotes(e.target.value)}
+                  placeholder="Add execution notes (optional)"
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700
+                             focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+              </div>
+
+              <div className="md:col-span-3">
+                <label className="text-[11px] font-semibold text-slate-600">Status (applies to new executions)</label>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {[
+                    { value: "auto", label: "Auto" },
+                    { value: "running", label: "Running" },
+                    { value: "completed", label: "Completed" },
+                  ].map((opt) => (
+                    <Button
+                      key={opt.value}
+                      variant={globalStatus === opt.value ? "primary" : "secondary"}
+                      className="h-8 px-3 text-xs"
+                      onClick={() => setGlobalStatus(opt.value)}
+                    >
+                      {opt.label}
+                    </Button>
+                  ))}
+                </div>
+                <div className="mt-2 text-[11px] text-slate-500">
+                  Auto sets status to running for pending results, otherwise completed.
+                </div>
+              </div>
+
+              <div className="md:col-span-3">
+                <label className="text-[11px] font-semibold text-slate-600">
+                  Result (applies to selected test case)
+                </label>
+                {testCaseIdFilter && selectedCase ? (
+                  <>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {resultButtons.map((b) => (
+                        <button
+                          key={b.value}
+                          onClick={() => handleExecute(selectedCase.id, b.value)}
+                          disabled={savingId === selectedCase.id || !testRunId}
+                          className={cn(
+                            "rounded-xl px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition",
+                            "bg-gradient-to-r focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60",
+                            b.className
+                          )}
+                          title={!testRunId ? "No test_run_id selected" : ""}
+                        >
+                          {savingId === selectedCase.id ? "Saving…" : b.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-500">
+                      Selected: #{selectedCase.id} • Next attempt: {nextAttemptByCase.get(Number(selectedCase.id)) || 1}
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-2 text-[11px] text-slate-500">
+                    Select a test case to run results here.
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardBody>
+        </Card>
 
         {/* LIST */}
         {loading ? (
@@ -382,30 +892,27 @@ export default function ExecuteTestCases() {
           <div className="space-y-4">
             {visibleItems.map((tc) => {
               const latest = latestByCase.get(tc.id);
-              const latestResult = latest?.result || "Pending";
+              const latestResult = (latest?.result || "pending").toLowerCase();
               const history = executionsByCase.get(tc.id) || [];
               const tone = toneFromResult(latestResult);
+              const selectedExecutionId = selectedExecutionByCase[tc.id] ?? latest?.id ?? null;
+              const selectedExecution = history.find((ex) => ex.id === selectedExecutionId) || latest || null;
+              const selectedResult = (selectedExecution?.result || "pending").toLowerCase();
+              const canReportBug = selectedResult === "failed";
+              const nextAttempt = nextAttemptByCase.get(Number(tc.id)) || 1;
 
               return (
                 <Card key={tc.id} className="relative overflow-hidden">
-                  {/* Left accent bar */}
-                  <div
-                    className={cn(
-                      "absolute left-0 top-0 h-full w-1.5 bg-gradient-to-b",
-                      accentFromLatestResult(latestResult)
-                    )}
-                  />
+                  <div className={cn("absolute left-0 top-0 h-full w-1.5 bg-gradient-to-b", accentFromLatestResult(latestResult))} />
 
                   <CardHeader className="pl-7 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <div className="text-sm font-semibold text-slate-900">
-                          {tc.title || "Untitled"}
-                        </div>
-                        <Chip tone={tone}>Latest: {latestResult}</Chip>
+                        <div className="text-sm font-semibold text-slate-900">{tc.title || "Untitled"}</div>
+                        <Chip tone={tone}>Latest: {titleFromResultLower(latestResult)}</Chip>
                         <Badge tone="slate">Executions: {history.length}</Badge>
+                        <Badge tone="indigo">Next attempt: {nextAttempt}</Badge>
                       </div>
-
                       {tc.description ? (
                         <div className="text-sm text-slate-600">{tc.description}</div>
                       ) : (
@@ -413,46 +920,89 @@ export default function ExecuteTestCases() {
                       )}
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      {resultButtons.map((b) => (
-                        <button
-                          key={b.label}
-                          onClick={() => handleExecute(tc.id, b.label)}
-                          disabled={savingId === tc.id}
-                          className={cn(
-                            "rounded-xl px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition",
-                            "bg-gradient-to-r focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60",
-                            b.className
-                          )}
+                    <div className="flex flex-wrap gap-2 items-center">
+                      {history.length > 0 && (
+                        <select
+                          value={selectedExecutionId ?? ""}
+                          onChange={(e) =>
+                            setSelectedExecutionByCase((prev) => ({
+                              ...prev,
+                              [tc.id]: e.target.value ? Number(e.target.value) : null,
+                            }))
+                          }
+                          className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-xs"
+                          title="Select execution for bug report"
                         >
-                          {savingId === tc.id ? "Saving…" : b.label}
-                        </button>
-                      ))}
+                          {history.map((ex) => (
+                            <option key={ex.id} value={ex.id}>
+                              #{ex.id} • {titleFromResultLower(ex.result || "pending")} • Attempt {ex.attempt ?? "—"}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate(`/projects/${projectId}/bugs/new`, {
+                            state: {
+                              projectId: Number(projectId),
+                              requirementId: tc.requirement_id ?? null,
+                              testCaseId: Number(tc.id),
+                              executionId: selectedExecution?.id || null,
+                              source: "test_execution",
+                              title: `Bug: ${tc.title || "Untitled"}`,
+                              description: tc.description || "",
+                              steps: (tc.steps || []).join("\n"),
+                              expected: tc.expected_result || "",
+                              actual: (selectedExecution?.notes || globalNotes || "").trim(),
+                              environment: formatEnvironmentSummary(selectedExecution?.environment_json) || "",
+                              severity_hint: "medium",
+                            },
+                          })
+                        }
+                        disabled={!projectId}
+                        className={cn(
+                          "rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm transition border",
+                          canReportBug
+                            ? "bg-rose-600 text-white border-rose-600 hover:bg-rose-700"
+                            : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                        )}
+                        title={
+                          canReportBug
+                            ? "Create bug report from selected execution"
+                            : "Create bug report (tip: select a Failed execution)"
+                        }
+                      >
+                        🐞 Bug report
+                      </button>
+
+                      {!testCaseIdFilter &&
+                        resultButtons.map((b) => (
+                          <button
+                            key={b.value}
+                            onClick={() => handleExecute(tc.id, b.value)}
+                            disabled={savingId === tc.id || !testRunId}
+                            className={cn(
+                              "rounded-xl px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition",
+                              "bg-gradient-to-r focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60",
+                              b.className
+                            )}
+                            title={!testRunId ? "No test_run_id selected" : ""}
+                          >
+                            {savingId === tc.id ? "Saving…" : b.label}
+                          </button>
+                        ))}
                     </div>
                   </CardHeader>
 
                   <CardBody className="pl-7 pt-4 space-y-4">
                     {/* Notes */}
-                    <div>
-                      <label className="text-xs font-semibold text-slate-600">Notes</label>
-                      <input
-                        value={notesByCase[tc.id] || ""}
-                        onChange={(e) =>
-                          setNotesByCase((prev) => ({ ...prev, [tc.id]: e.target.value }))
-                        }
-                        placeholder="Add execution notes (optional)"
-                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700
-                                   focus:outline-none focus:ring-2 focus:ring-blue-200"
-                      />
-                    </div>
-
                     {/* History */}
                     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-xs font-semibold text-slate-600">Execution history</div>
-                        {history.length > 10 && (
-                          <Badge tone="slate">Showing 10 / {history.length}</Badge>
-                        )}
+                        {history.length > 10 && <Badge tone="slate">Showing 10 / {history.length}</Badge>}
                       </div>
 
                       {history.length ? (
@@ -460,10 +1010,14 @@ export default function ExecuteTestCases() {
                           <table className="w-full text-xs text-slate-700">
                             <thead>
                               <tr className="text-left text-slate-500">
+                                <th className="py-2 pr-3">Run</th>
+                                <th className="py-2 pr-3">Attempt</th>
                                 <th className="py-2 pr-3">Executed by</th>
+                                <th className="py-2 pr-3">Status</th>
                                 <th className="py-2 pr-3">Result</th>
                                 <th className="py-2 pr-3">Started</th>
                                 <th className="py-2 pr-3">Finished</th>
+                                <th className="py-2 pr-3">Job URL</th>
                                 <th className="py-2 pr-3">Notes</th>
                                 <th className="py-2 pr-3">Actions</th>
                               </tr>
@@ -471,8 +1025,15 @@ export default function ExecuteTestCases() {
                             <tbody>
                               {history.slice(0, 10).map((ex) => (
                                 <tr key={ex.id} className="border-t border-slate-200/70">
+                                  <td className="py-2 pr-3">{ex.test_run_id ?? "—"}</td>
+                                  <td className="py-2 pr-3">{ex.attempt ?? "—"}</td>
+
+                                  <td className="py-2 pr-3">{ex.executed_by_user_name || ex.executed_by_user_id || "—"}</td>
+
                                   <td className="py-2 pr-3">
-                                    {ex.executed_by_user_name || ex.executed_by_user_id || "—"}
+                                    <Chip tone={(ex.status || "").toLowerCase() === "completed" ? "green" : "blue"}>
+                                      {ex.status || "—"}
+                                    </Chip>
                                   </td>
 
                                   <td className="py-2 pr-3 font-semibold">
@@ -482,25 +1043,35 @@ export default function ExecuteTestCases() {
                                         onChange={(e) => setEditResult(e.target.value)}
                                         className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
                                       >
-                                        {["Passed", "Failed", "Blocked", "Skipped", "Pending"].map((r) => (
+                                        {["passed", "failed", "blocked", "skipped", "pending"].map((r) => (
                                           <option key={r} value={r}>
-                                            {r}
+                                            {titleFromResultLower(r)}
                                           </option>
                                         ))}
                                       </select>
                                     ) : (
                                       <Chip tone={toneFromResult(ex.result)} className="font-semibold">
-                                        {ex.result || "Pending"}
+                                        {titleFromResultLower(ex.result || "pending")}
                                       </Chip>
                                     )}
                                   </td>
 
-                                  <td className="py-2 pr-3">
-                                    {ex.started_at ? new Date(ex.started_at).toLocaleString() : "—"}
-                                  </td>
+                                  <td className="py-2 pr-3">{ex.started_at ? new Date(ex.started_at).toLocaleString() : "—"}</td>
+                                  <td className="py-2 pr-3">{ex.finished_at ? new Date(ex.finished_at).toLocaleString() : "—"}</td>
 
                                   <td className="py-2 pr-3">
-                                    {ex.finished_at ? new Date(ex.finished_at).toLocaleString() : "—"}
+                                    {ex.job_url ? (
+                                      <a
+                                        href={ex.job_url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-blue-600 hover:underline"
+                                      >
+                                        Open
+                                      </a>
+                                    ) : (
+                                      "—"
+                                    )}
                                   </td>
 
                                   <td className="py-2 pr-3">
@@ -518,32 +1089,24 @@ export default function ExecuteTestCases() {
                                   <td className="py-2 pr-3">
                                     {editingExecId === ex.id ? (
                                       <div className="flex gap-2">
-                                        <button
-                                          onClick={() => saveExecutionEdit(ex, projectId)}
-                                          disabled={savingId === ex.id}
-                                          className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white
-                                                     hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60"
-                                        >
+                                        <Button variant="primary" onClick={() => saveExecutionEdit(ex)} disabled={savingId === ex.id}>
                                           Save
-                                        </button>
-                                        <button
-                                          onClick={() => setEditingExecId(null)}
-                                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                                        >
+                                        </Button>
+                                        <Button variant="secondary" onClick={() => setEditingExecId(null)}>
                                           Cancel
-                                        </button>
+                                        </Button>
                                       </div>
                                     ) : (
-                                      <button
+                                      <Button
+                                        variant="secondary"
                                         onClick={() => {
                                           setEditingExecId(ex.id);
-                                          setEditResult(ex.result || "Pending");
+                                          setEditResult((ex.result || "pending").toLowerCase());
                                           setEditNotes(ex.notes || "");
                                         }}
-                                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                                       >
                                         Edit
-                                      </button>
+                                      </Button>
                                     )}
                                   </td>
                                 </tr>

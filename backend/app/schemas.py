@@ -1,5 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from typing import Dict
 from typing import Optional, Any, List, Literal
 
 # ---------- AUTH ----------
@@ -308,29 +309,102 @@ class TestCaseOut(BaseModel):
     created_at: str
 
 
-# ---------- TEST EXECUTIONS (Exekvering) ----------
+# ---------- TEST EXECUTIONS (Execution) ----------
+
+TestExecutionResult = Literal["pending", "passed", "failed", "blocked", "skipped"]
+TestExecutionStatus = Literal["running", "completed"]  # optional field
+
 class TestExecutionCreateIn(BaseModel):
     project_id: int
     test_case_id: int
-    result: Literal["Passed", "Failed", "Blocked", "Skipped", "Pending"] = "Pending"
+    test_run_id: int
+
+    executed_by_user_id: Optional[int] = None  # if you set this from auth, you can remove it from input
+
+    # Optional lifecycle status
+    status: Optional[TestExecutionStatus] = None
+
+    result: TestExecutionResult = "pending"
+
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+    environment_json: Optional[Dict[str, Any]] = None
+
+    build_number: Optional[str] = Field(default=None, max_length=50)
+    git_sha: Optional[str] = Field(default=None, max_length=64)
+    branch: Optional[str] = Field(default=None, max_length=100)
+
+    ci_run_id: Optional[str] = Field(default=None, max_length=100)
+    job_url: Optional[str] = None
+
     notes: Optional[str] = None
+
+    artifacts: Optional[Dict[str, Any]] = None
+
+    attempt: int = Field(default=1, ge=1)
+
+
+class TestExecutionUpdateIn(BaseModel):
+    """
+    Optional but strongly recommended: lets you PATCH an execution
+    (set running -> completed, update result, attach artifacts, etc.)
+    """
+    status: Optional[TestExecutionStatus] = None
+    result: Optional[TestExecutionResult] = None
+
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+    environment_json: Optional[Dict[str, Any]] = None
+
+    build_number: Optional[str] = Field(default=None, max_length=50)
+    git_sha: Optional[str] = Field(default=None, max_length=64)
+    branch: Optional[str] = Field(default=None, max_length=100)
+
+    ci_run_id: Optional[str] = Field(default=None, max_length=100)
+    job_url: Optional[str] = None
+
+    notes: Optional[str] = None
+    artifacts: Optional[Dict[str, Any]] = None
+
+    attempt: Optional[int] = Field(default=None, ge=1)
 
 
 class TestExecutionOut(BaseModel):
     id: int
     project_id: int
     test_case_id: int
+    test_run_id: int
+
     executed_by_user_id: Optional[int] = None
     executed_by_user_name: Optional[str] = None
+
+    status: Optional[str] = None
     result: str
+
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+    environment_json: Optional[Dict[str, Any]] = None
+
+    build_number: Optional[str] = None
+    git_sha: Optional[str] = None
+    branch: Optional[str] = None
+
+    ci_run_id: Optional[str] = None
+    job_url: Optional[str] = None
+
     notes: Optional[str] = None
-    started_at: Optional[str] = None
-    finished_at: Optional[str] = None
-    created_at: str
+    artifacts: Optional[Dict[str, Any]] = None
+
+    attempt: int
+
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
-
 
 # ---------- REQUIREMENT ANALYSIS ----------
 
@@ -451,3 +525,89 @@ class RequirementLatestClassificationOut(BaseModel):
 
     summary: Optional[str] = None
     recommendations: Optional[str] = None
+
+#------------------------------------------
+# ---------- BUG REPORTS ----------
+#------------------------------------------
+BugSeverity = Literal["low", "medium", "high", "critical"]
+BugPriority = Literal["low", "medium", "high", "critical"]
+BugStatus = Literal["open", "triaged", "in_progress", "resolved", "closed"]
+
+class BugReportCreateIn(BaseModel):
+    project_id: int
+    title: str = Field(min_length=1, max_length=255)
+    description: str = Field(min_length=1)
+
+    requirement_id: Optional[int] = None
+    test_case_id: Optional[int] = None
+    test_execution_id: Optional[int] = None
+
+    steps_to_reproduce: Optional[str] = None
+    expected_result: Optional[str] = None
+    actual_result: Optional[str] = None
+
+    severity: BugSeverity = "medium"
+    priority: BugPriority = "medium"
+    status: BugStatus = "open"
+    environment: Optional[str] = None
+
+
+class BugReportUpdateIn(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = Field(default=None, min_length=1)
+
+    steps_to_reproduce: Optional[str] = None
+    expected_result: Optional[str] = None
+    actual_result: Optional[str] = None
+
+    severity: Optional[BugSeverity] = None
+    priority: Optional[BugPriority] = None
+    status: Optional[BugStatus] = None
+    environment: Optional[str] = None
+
+    requirement_id: Optional[int] = None
+    test_case_id: Optional[int] = None
+    test_execution_id: Optional[int] = None
+
+
+class BugReportAIReportIn(BaseModel):
+    project_id: int
+    title: str = Field(min_length=1, max_length=255)
+    description: str = Field(min_length=1)
+
+    steps_to_reproduce: Optional[str] = None
+    expected_result: Optional[str] = None
+    actual_result: Optional[str] = None
+
+
+class BugReportOut(BaseModel):
+    id: int
+    project_id: int
+
+    requirement_id: Optional[int] = None
+    test_case_id: Optional[int] = None
+    test_execution_id: Optional[int] = None
+
+    reported_by_user_id: Optional[int] = None
+
+    title: str
+    description: str
+
+    steps_to_reproduce: Optional[str] = None
+    expected_result: Optional[str] = None
+    actual_result: Optional[str] = None
+
+    severity: str
+    priority: str
+    status: str
+    environment: Optional[str] = None
+
+    ai_report_json: Optional[dict] = None
+    ai_report_raw: Optional[str] = None
+    ai_reported_at: Optional[str] = None
+
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

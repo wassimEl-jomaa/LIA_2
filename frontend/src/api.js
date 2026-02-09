@@ -155,7 +155,27 @@ export async function updateTestExecution(executionId, payload) {
   }
   return r.json();
 }
+export async function listBugs({ projectId, requirementId }) {
+  const q = new URLSearchParams({ project_id: projectId });
+  if (requirementId) q.set("requirement_id", requirementId);
+  return apiFetch(`/api/bug_reports?${q.toString()}`);
+}
 
+export async function getBug(bugId) {
+  return apiFetch(`/api/bug_reports/${bugId}`);
+}
+
+export async function createBug(payload) {
+  return apiFetch(`/api/bug_reports`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateBug(bugId, payload) {
+  return apiFetch(`/api/bug_reports/${bugId}`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export async function deleteBug(bugId) {
+  return apiFetch(`/api/bug_reports/${bugId}`, { method: "DELETE" });
+}
 export async function predictRequirementCategory({ text }) {
   const token = localStorage.getItem("token");
   if (!token) {

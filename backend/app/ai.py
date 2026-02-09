@@ -24,7 +24,7 @@ MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 
 RISK_LEVELS = {"low", "medium", "high", "critical"}
 
-SYSTEM_BASE = """You are a senior QA engineer and test lead.
+SYSTEM_BASE = """You are a senior QA engineer.
 You design actionable, realistic test cases.
 
 Rules:
@@ -216,11 +216,11 @@ REQUIREMENT (user story / spec):
 {requirement}
 
 CONSTRAINTS:
-- Create 8–15 test cases unless the requirement is tiny (then at least 5).
+- Create 1-4 test cases unless the requirement is tiny (then at least 1).
 - Include a mix: Functional + Negative + Boundary (and Security/Performance when relevant).
 - Prefer end-to-end user flows, but add API/validation cases if implied (email formats, rate limits, token expiry, etc.).
 - Do not repeat the same test case idea with different wording.
-- Add at least one meaningful precondition per test case (e.g., "User is on the search screen") unless none apply.
+- Add at least one meaningful precondition per test case.
 
 OUTPUT JSON EXACTLY in this schema:
 {{
@@ -335,8 +335,8 @@ def prompt_requirement_analysis(requirement: str, context: Optional[dict] = None
     if context:
         context_block = "CONTEXT (use if relevant):\n" + json.dumps(context, ensure_ascii=False, indent=2) + "\n"
 
-    return f"""
-Analyze this requirement like a QA test lead. Find ambiguity, missing info, edge cases, security/privacy concerns, and acceptance criteria gaps.
+    return f"""Review this requirement like a senior and istqb certified test analys. 
+    Find ambiguity, missing info, edge cases, security/privacy concerns, and acceptance criteria gaps
 
 {context_block}
 REQUIREMENT:
@@ -426,3 +426,26 @@ async def generate_classification_and_store(
   await db.commit()
   await db.refresh(row)
   return row
+
+def prompt_bug_triage(title: str, description: str, steps: str | None, expected: str | None, actual: str | None) -> str:
+    return f"""
+You are a QA lead. Triage this bug and predict severity/priority.
+
+BUG:
+Title: {title}
+Description: {description}
+Steps: {steps or ""}
+Expected: {expected or ""}
+Actual: {actual or ""}
+
+Return JSON only:
+{{
+  "severity": "low|medium|high|critical",
+  "priority": "low|medium|high|critical",
+  "status": "triaged",
+  "suggested_root_causes": ["..."],
+  "suggested_next_steps": ["..."],
+  "duplicate_search_terms": ["..."],
+  "assumptions": ["..."]
+}}
+"""

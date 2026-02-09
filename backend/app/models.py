@@ -2,7 +2,7 @@ from sqlalchemy import Boolean, String, Text, DateTime, UniqueConstraint, func, 
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
-
+from typing import Any
 from .db import Base
 
 # =========================
@@ -77,8 +77,8 @@ class Project(Base):
 
     members = relationship("ProjectMember", back_populates="project", cascade="all, delete-orphan")
     group_members = relationship("ProjectGroupMember", back_populates="project", cascade="all, delete-orphan")
-
-
+    bug_reports = relationship("BugReport",back_populates="project",cascade="all, delete-orphan",)
+    test_runs = relationship("TestRun", back_populates="project", cascade="all, delete-orphan")
 # =========================
 # GROUPS
 # =========================
@@ -225,7 +225,11 @@ class User(Base):
         cascade="all, delete-orphan",
         foreign_keys="RequirementAnalysis.created_by_user_id",
     )
-
+    reported_bugs = relationship(
+    "BugReport",
+    back_populates="reported_by_user",
+    foreign_keys="BugReport.reported_by_user_id",
+)
 
 # =========================
 # REQUIREMENTS (Krav / User story)
@@ -282,7 +286,10 @@ class Requirement(Base):
     foreign_keys=[created_by_user_id],
     back_populates="created_requirements",
 )
-
+    bug_reports = relationship(
+    "BugReport",
+    back_populates="requirement",
+)
 
 # =========================
 # REQUIREMENT ANALYSIS
@@ -362,14 +369,9 @@ class TestCase(Base):
     requirement = relationship("Requirement", back_populates="test_cases")
 
     executions = relationship("TestExecution", back_populates="test_case", cascade="all, delete-orphan")
-
-
-# =========================
-# TEST EXECUTION (Exekvering test cases)
-# =========================
-class TestExecution(Base):
-    __tablename__ = "test_executions"
-    __table_args__ = (UniqueConstraint("test_case_id", "created_at", name="uq_test_executions_case_created_at"),)
+    bug_reports = relationship("BugReport",back_populates="test_case",cascade="all, delete-orphan",)
+class TestRun(Base):
+    __tablename__ = "test_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
@@ -379,8 +381,50 @@ class TestExecution(Base):
         index=True,
     )
 
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    triggered_by: Mapped[str | None] = mapped_column(String(20), nullable=True)  # manual/scheduled/commit/release
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    project = relationship("Project", back_populates="test_runs")
+    test_executions = relationship("TestExecution", back_populates="test_run")
+# =========================
+# TEST EXECUTION (Exekvering test cases)
+# =========================
+class TestExecution(Base):
+    __tablename__ = "test_executions"
+
+    __table_args__ = (
+        # ✅ Better uniqueness: within a run, a test case can have multiple attempts
+        UniqueConstraint("test_run_id", "test_case_id", "attempt", name="uq_exec_run_case_attempt"),
+
+        # ✅ Helpful indexes for reporting
+        Index("ix_exec_project_created", "project_id", "created_at"),
+        Index("ix_exec_run_case", "test_run_id", "test_case_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    test_run_id: Mapped[int] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), nullable=False, index=True)
     test_case_id: Mapped[int] = mapped_column(
         ForeignKey("test_cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # ✅ Groups many executions into one run/session
+    test_run_id: Mapped[int] = mapped_column(
+        ForeignKey("test_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -391,19 +435,72 @@ class TestExecution(Base):
         index=True,
     )
 
-    result: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    # Optional: track lifecycle separately from result
+    status: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,  # or nullable=False with server_default="completed"
+    )
+
+    # ✅ result values: pending/passed/failed/blocked/skipped
+    result: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="pending",
+    )
+
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    # ✅ OS/browser/device/appVersion/etc
+    environment_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+    build_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    git_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    branch: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    ci_run_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    job_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # ✅ links to logs/screenshots/videos etc
+    artifacts: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    attempt: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="1",
+    )
 
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
     project = relationship("Project", back_populates="test_executions")
     test_case = relationship("TestCase", back_populates="executions")
+    test_run = relationship("TestRun", back_populates="test_executions")
+
     executed_by_user = relationship("User", back_populates="created_test_executions")
 
-
+    # ✅ IMPORTANT: remove delete-orphan if BugReport.test_execution_id is nullable + SET NULL
+    bug_reports = relationship("BugReport", back_populates="test_execution")
 class ClassifyRequirement(Base):
     __tablename__ = "classify_requirements"
 
@@ -468,3 +565,74 @@ class Token(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     user = relationship("User", back_populates="token")
+
+# =========================
+# BUG REPORTS   
+# =========================
+class BugReport(Base):
+    __tablename__ = "bug_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    requirement_id: Mapped[int | None] = mapped_column(
+        ForeignKey("requirements.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    test_case_id: Mapped[int | None] = mapped_column(
+        ForeignKey("test_cases.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    test_execution_id: Mapped[int | None] = mapped_column(
+        ForeignKey("test_executions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    reported_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    steps_to_reproduce: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expected_result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actual_result: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, default="medium")
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default="medium")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="open")
+
+    environment: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # ✅ AI report data (optional)
+    ai_report_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    ai_report_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+    # ✅ Relationships (two-way)
+    project = relationship("Project", back_populates="bug_reports")
+    requirement = relationship("Requirement", back_populates="bug_reports")
+    test_case = relationship("TestCase", back_populates="bug_reports")
+    test_execution = relationship("TestExecution", back_populates="bug_reports")
+
+    reported_by_user = relationship(
+        "User",
+        back_populates="reported_bugs",
+        foreign_keys=[reported_by_user_id],
+    )
