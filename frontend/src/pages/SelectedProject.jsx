@@ -258,6 +258,12 @@ export default function SelectedProject() {
                       Generate Test Cases
                     </button>
                     <button
+                      onClick={() => navigate(`/projects/${projectId}/bugs/board`)}
+                      className="rounded-xl bg-purple-600 px-4 py-2 text-white font-semibold hover:bg-purple-700 shadow-sm"
+                    >
+                      🐛 Bug Board
+                    </button>
+                    <button
                       onClick={() => navigate(`/projects/${projectId}/testcases`)}
                       className="rounded-xl bg-blue-600 px-4 py-2 text-white font-semibold hover:bg-blue-700 shadow-sm"
                     >

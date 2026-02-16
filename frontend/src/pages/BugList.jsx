@@ -312,6 +312,13 @@ export default function BugList() {
                 </button>
 
                 <button
+                  onClick={() => navigate(`/projects/${projectId}/bugs/board`)}
+                  className="rounded-xl bg-purple-600 px-4 py-2 text-white font-semibold hover:bg-purple-700 shadow-sm"
+                >
+                  📊 Board View
+                </button>
+
+                <button
                   onClick={load}
                   disabled={loading}
                   className="rounded-xl bg-white px-4 py-2 font-semibold text-slate-800 border border-slate-200 hover:bg-slate-50 disabled:opacity-60"

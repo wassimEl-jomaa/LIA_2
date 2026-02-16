@@ -448,6 +448,8 @@ class RequirementAnalysisOut(BaseModel):
 RiskLevel = Literal["low", "medium", "high", "critical"]
 
 class ClassifyRequirementBase(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+    
     category: str = Field(..., max_length=100, examples=["security", "performance", "functional"])
     risk_level: RiskLevel = Field(..., examples=["medium"])
     confidence: Optional[float] = Field(None, ge=0.0, le=1.0, examples=[0.82])
@@ -461,6 +463,8 @@ class ClassifyRequirementCreate(BaseModel):
     """
     Manual create (optional). Usually you'll generate via AI endpoint.
     """
+    model_config = ConfigDict(protected_namespaces=())
+    
     project_id: int
     requirement_id: int
     category: str = Field(..., max_length=100)
@@ -611,3 +615,95 @@ class BugReportOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# =========================
+# BUG STATUS HISTORY SCHEMAS
+# =========================
+class BugStatusHistoryOut(BaseModel):
+    """Schema for bug status history audit trail entries."""
+    id: int
+    bug_id: int
+    from_status: Optional[str] = None  # NULL for initial status
+    to_status: str
+    changed_by_user_id: Optional[int] = None
+    comment: Optional[str] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class BugStatusHistoryWithUserOut(BugStatusHistoryOut):
+    """Extended schema including user information."""
+    changed_by_user_name: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class BugStatusChangeIn(BaseModel):
+    """Schema for changing bug status with optional comment."""
+    status: str
+    comment: Optional[str] = None
+
+
+class BugHistoryTimelineOut(BaseModel):
+    """Complete timeline of bug status changes."""
+    bug_id: int
+    current_status: str
+    history: list[BugStatusHistoryWithUserOut]
+    formatted_timeline: str  # Human-readable: "New → Triaged by Alex → Fixed"
+
+
+# =========================
+# BUG RETESTS SCHEMAS
+# =========================
+class BugRetestOut(BaseModel):
+    """Schema for bug retest execution records."""
+    id: int
+    bug_id: int
+    test_execution_id: int
+    result: str  # passed/failed/blocked/skipped
+    created_by_user_id: Optional[int] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class BugRetestWithDetailsOut(BugRetestOut):
+    """Extended schema including user and test execution details."""
+    created_by_user_name: Optional[str] = None
+    test_case_id: Optional[int] = None
+    test_case_title: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class BugRetestCreateIn(BaseModel):
+    """Schema for creating a bug retest record."""
+    bug_id: int
+    test_execution_id: int
+    result: str  # passed/failed/blocked/skipped
+
+
+class BugRetestStatsOut(BaseModel):
+    """Statistics for bug retests."""
+    total_retests: int
+    passed: int
+    failed: int
+    blocked: int
+    skipped: int
+    last_result: Optional[str] = None
+    last_tested_at: Optional[datetime] = None
+    verified: bool
+
+
+class BugRetestSummaryOut(BaseModel):
+    """Summary of bug retests."""
+    bug_id: int
+    retests: list[BugRetestWithDetailsOut]
+    stats: BugRetestStatsOut
+    formatted_summary: str  # Human-readable: "3 retests: Failed → Failed → Passed (Verified)"

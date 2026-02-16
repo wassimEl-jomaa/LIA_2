@@ -50,18 +50,31 @@ Syftet med projektet är att skapa ett intelligent stöd som hjälper team att:
 Projektet är under utveckling och vidareutvecklas kontinuerligt.
 
 
+### Navigate to backend directory
+cd backend
+
 ### Create and activate virtual environment
 python -m venv .venv
-source .venv/Scripts/activate  # Windows
+source .venv/Scripts/activate  # Windows (Git Bash)
+# OR
+.venv\Scripts\activate  # Windows (CMD/PowerShell)
 
 ### Install dependencies
-
 pip install -r requirements.txt  
 
-### Reset DB:
-source
+### Create database tables
+# Option 1: Use Python script (recommended - easier)
+python create_tables.py
+
+# Option 2: Use SQL scripts directly with PostgreSQL client
+cd sql_scripts
+psql -U postgres -d noor_ai_assistant -f create_bug_status_history.sql
+psql -U postgres -d noor_ai_assistant -f create_bug_retests.sql
+cd ..
+
 ### Start the FastAPI server
 uvicorn app.main:app --reload
+
 ### Open in browser
 👉 http://127.0.0.1:8000/docs
 

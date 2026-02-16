@@ -231,6 +231,18 @@ class User(Base):
     foreign_keys="BugReport.reported_by_user_id",
 )
 
+    bug_status_changes = relationship(
+        "BugStatusHistory",
+        back_populates="changed_by_user",
+        foreign_keys="BugStatusHistory.changed_by_user_id",
+    )
+
+    bug_retests = relationship(
+        "BugRetest",
+        back_populates="created_by_user",
+        foreign_keys="BugRetest.created_by_user_id",
+    )
+
 # =========================
 # REQUIREMENTS (Krav / User story)
 # =========================
@@ -501,6 +513,7 @@ class TestExecution(Base):
 
     # ✅ IMPORTANT: remove delete-orphan if BugReport.test_execution_id is nullable + SET NULL
     bug_reports = relationship("BugReport", back_populates="test_execution")
+    bug_retests = relationship("BugRetest", back_populates="test_execution", cascade="all, delete-orphan")
 class ClassifyRequirement(Base):
     __tablename__ = "classify_requirements"
 
@@ -636,3 +649,97 @@ class BugReport(Base):
         back_populates="reported_bugs",
         foreign_keys=[reported_by_user_id],
     )
+
+    status_history = relationship(
+        "BugStatusHistory",
+        back_populates="bug_report",
+        cascade="all, delete-orphan",
+    )
+
+    retests = relationship(
+        "BugRetest",
+        back_populates="bug_report",
+        cascade="all, delete-orphan",
+    )
+
+
+# =========================
+# BUG STATUS HISTORY (Audit Trail)
+# =========================
+class BugStatusHistory(Base):
+    __tablename__ = "bug_status_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    bug_id: Mapped[int] = mapped_column(
+        ForeignKey("bug_reports.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    from_status: Mapped[str | None] = mapped_column(String(30), nullable=True)  # NULL for initial status
+    to_status: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    changed_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True,  # Index for chronological queries
+    )
+
+    # Relationships
+    bug_report = relationship("BugReport", back_populates="status_history")
+    changed_by_user = relationship("User", back_populates="bug_status_changes")
+
+
+# =========================
+# BUG RETESTS (Connect bugs to retest executions)
+# =========================
+class BugRetest(Base):
+    __tablename__ = "bug_retests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    bug_id: Mapped[int] = mapped_column(
+        ForeignKey("bug_reports.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    test_execution_id: Mapped[int] = mapped_column(
+        ForeignKey("test_executions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    result: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        # passed/failed/blocked/skipped
+    )
+
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+    )
+
+    # Relationships
+    bug_report = relationship("BugReport", back_populates="retests")
+    test_execution = relationship("TestExecution", back_populates="bug_retests")
+    created_by_user = relationship("User", back_populates="bug_retests")
