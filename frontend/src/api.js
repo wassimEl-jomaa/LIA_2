@@ -198,3 +198,46 @@ export async function predictRequirementCategory({ text }) {
 
   return r.json();
 }
+export async function downloadExport({ projectId, entity, format }) {
+  const res = await fetchWithAuth(`/api/projects/${projectId}/export/${entity}?format=${format}`, {
+    method: "GET",
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(txt || "Export failed");
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get("content-disposition") || "";
+  const match = cd.match(/filename="([^"]+)"/);
+  const filename = match?.[1] || `export.${format}`;
+  return { blob, filename };
+}
+
+export async function importRequirements({
+  projectId,
+  file,
+  format = "auto",
+  mode = "upsert_external_id",
+  dryRun = true,
+  onError = "continue",
+  mapping = null,
+}) {
+  const fd = new FormData();
+  fd.append("file", file);
+  if (mapping) fd.append("mapping_json", JSON.stringify(mapping));
+
+  const res = await fetchWithAuth(
+    `/api/projects/${projectId}/import/requirements?format=${format}&mode=${mode}&dry_run=${dryRun}&on_error=${onError}`,
+    { method: "POST", body: fd }
+  );
+
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+
+  if (!res.ok) {
+    const msg = data?.detail || text || "Import failed";
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  }
+  return data;
+}

@@ -73,7 +73,6 @@ psql -U postgres -d noor_ai_assistant -f create_bug_retests.sql
 cd ..
 
 ### Start the FastAPI server
-uvicorn app.main:app --reload
 
 ### Open in browser
 👉 http://127.0.0.1:8000/docs

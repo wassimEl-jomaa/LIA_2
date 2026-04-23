@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
 const API_BASE = (import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000").replace(/\/$/, "");
@@ -41,74 +41,268 @@ async function apiFetch(path, options = {}) {
   return data;
 }
 
+function cn(...classes) {
+  return classes.filter(Boolean).join(" ");
+}
+
+function formatDate(dateString) {
+  if (!dateString) return "—";
+  const d = new Date(dateString);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("sv-SE");
+}
+
+function formatDateTime(dateString) {
+  if (!dateString) return "—";
+  const d = new Date(dateString);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("sv-SE");
+}
+
+/** ---- board config ---- */
 const COLUMNS = [
-  { id: "new", title: "New", color: "bg-gray-100 border-gray-300" },
-  { id: "triaged", title: "Triaged", color: "bg-blue-50 border-blue-300" },
-  { id: "in_progress", title: "In Progress", color: "bg-yellow-50 border-yellow-300" },
-  { id: "fixed", title: "Fixed", color: "bg-green-50 border-green-300" },
-  { id: "retest_pending", title: "Retest Pending", color: "bg-purple-50 border-purple-300" },
-  { id: "verified", title: "Verified", color: "bg-emerald-50 border-emerald-300" },
-  { id: "reopened", title: "Reopened", color: "bg-red-50 border-red-300" },
+  {
+    id: "new",
+    title: "New",
+    helper: "Untriaged",
+    tint: "from-slate-50 to-white",
+    ring: "ring-slate-200",
+    dot: "bg-slate-400",
+  },
+  {
+    id: "triaged",
+    title: "Triaged",
+    helper: "Ready to pick up",
+    tint: "from-sky-50 to-white",
+    ring: "ring-sky-200",
+    dot: "bg-sky-500",
+  },
+  {
+    id: "in_progress",
+    title: "In Progress",
+    helper: "Being fixed",
+    tint: "from-amber-50 to-white",
+    ring: "ring-amber-200",
+    dot: "bg-amber-500",
+  },
+  {
+    id: "fixed",
+    title: "Fixed",
+    helper: "Awaiting retest",
+    tint: "from-emerald-50 to-white",
+    ring: "ring-emerald-200",
+    dot: "bg-emerald-500",
+  },
+  {
+    id: "retest_pending",
+    title: "Retest Pending",
+    helper: "Verify in build",
+    tint: "from-violet-50 to-white",
+    ring: "ring-violet-200",
+    dot: "bg-violet-500",
+  },
+  {
+    id: "verified",
+    title: "Verified",
+    helper: "Confirmed fixed",
+    tint: "from-teal-50 to-white",
+    ring: "ring-teal-200",
+    dot: "bg-teal-500",
+  },
+  {
+    id: "reopened",
+    title: "Reopened",
+    helper: "Failed retest",
+    tint: "from-rose-50 to-white",
+    ring: "ring-rose-200",
+    dot: "bg-rose-500",
+  },
 ];
 
-const SEVERITY_COLORS = {
-  critical: "bg-red-100 text-red-800 border-red-300",
-  high: "bg-orange-100 text-orange-800 border-orange-300",
-  medium: "bg-yellow-100 text-yellow-800 border-yellow-300",
-  low: "bg-green-100 text-green-800 border-green-300",
+const SEVERITY_STYLES = {
+  critical: "bg-rose-50 text-rose-700 ring-rose-200",
+  high: "bg-orange-50 text-orange-700 ring-orange-200",
+  medium: "bg-amber-50 text-amber-700 ring-amber-200",
+  low: "bg-emerald-50 text-emerald-700 ring-emerald-200",
 };
 
-const PRIORITY_COLORS = {
-  critical: "bg-red-100 text-red-800",
-  high: "bg-orange-100 text-orange-800",
-  medium: "bg-yellow-100 text-yellow-800",
-  low: "bg-blue-100 text-blue-800",
+const PRIORITY_STYLES = {
+  critical: "bg-rose-600 text-white",
+  high: "bg-orange-600 text-white",
+  medium: "bg-amber-600 text-white",
+  low: "bg-sky-600 text-white",
 };
+
+function Pill({ className, children, title }) {
+  return (
+    <span
+      title={title}
+      className={cn(
+        "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset",
+        className
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function Button({ variant = "primary", className, ...props }) {
+  const base =
+    "inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition " +
+    "focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed";
+
+  const variants = {
+    primary:
+      "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm hover:from-blue-700 hover:to-indigo-700 focus:ring-blue-300",
+    secondary:
+      "bg-white/80 text-slate-800 border border-slate-200 hover:bg-white focus:ring-slate-300",
+    ghost:
+      "bg-transparent text-slate-700 hover:bg-slate-100/70 border border-transparent focus:ring-slate-300",
+  };
+
+  return <button className={cn(base, variants[variant], className)} {...props} />;
+}
+
+function IconButton({ className, title, children, ...props }) {
+  return (
+    <button
+      title={title}
+      className={cn(
+        "inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white/80 p-2 text-slate-700 " +
+          "hover:bg-white hover:text-slate-900 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300",
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+function StatCard({ label, value, hint, className }) {
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border border-white/40 bg-white/70 shadow-[0_1px_0_0_rgba(15,23,42,0.04)] backdrop-blur p-4",
+        className
+      )}
+    >
+      <div className="text-[11px] font-semibold text-slate-500">{label}</div>
+      <div className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900">{value}</div>
+      {hint ? <div className="mt-1 text-[11px] text-slate-500">{hint}</div> : null}
+    </div>
+  );
+}
 
 export default function BugBoard() {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  
+
   const [bugs, setBugs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [draggedBug, setDraggedBug] = useState(null);
   const [project, setProject] = useState(null);
+
+  const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [error, setError] = useState("");
+
+  // UI state
+  const [draggedBug, setDraggedBug] = useState(null);
+  const [dragOverCol, setDragOverCol] = useState(null);
+
+  const [q, setQ] = useState("");
+  const [severity, setSeverity] = useState("all");
+  const [priority, setPriority] = useState("all");
+  const [onlyReopened, setOnlyReopened] = useState(false);
+
+  const toastRef = useRef(null);
+  const [toast, setToast] = useState("");
+
+  function showToast(msg) {
+    setToast(msg);
+    if (toastRef.current) window.clearTimeout(toastRef.current);
+    toastRef.current = window.setTimeout(() => setToast(""), 2400);
+  }
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   async function loadData() {
     try {
       setLoading(true);
-      setError(null);
+      setError("");
 
-      // Try to load project details, but don't fail if it doesn't work
+      // project is optional
       try {
         const proj = await apiFetch(`/api/projects/${projectId}`);
         setProject(proj);
-      } catch (projErr) {
-        console.warn("Could not load project details:", projErr);
-        // Continue anyway, we can still show bugs
+      } catch (e) {
+        setProject(null);
       }
 
-      // Load bugs
       const bugData = await apiFetch(`/api/bug_reports?project_id=${projectId}`);
       setBugs(Array.isArray(bugData) ? bugData : []);
     } catch (err) {
-      console.error("Error loading bugs:", err);
-      setError(err.message || "Failed to load bugs");
+      setError(err?.message || "Failed to load bugs");
     } finally {
       setLoading(false);
     }
   }
 
+  const filteredBugs = useMemo(() => {
+    let list = Array.isArray(bugs) ? bugs : [];
+
+    const qq = (q || "").trim().toLowerCase();
+    if (qq) {
+      list = list.filter((b) => {
+        const hay = `${b.id} ${b.title || ""} ${b.description || ""}`.toLowerCase();
+        return hay.includes(qq);
+      });
+    }
+
+    if (severity !== "all") {
+      list = list.filter((b) => String(b.severity || "").toLowerCase() === severity);
+    }
+    if (priority !== "all") {
+      list = list.filter((b) => String(b.priority || "").toLowerCase() === priority);
+    }
+    if (onlyReopened) {
+      list = list.filter((b) => String(b.status || "").toLowerCase() === "reopened");
+    }
+
+    return list;
+  }, [bugs, q, severity, priority, onlyReopened]);
+
+  const counts = useMemo(() => {
+    const map = new Map(COLUMNS.map((c) => [c.id, 0]));
+    for (const b of filteredBugs) {
+      const s = String(b.status || "new");
+      map.set(s, (map.get(s) || 0) + 1);
+    }
+    return map;
+  }, [filteredBugs]);
+
+  const total = filteredBugs.length;
+
+  const ageHint = useMemo(() => {
+    if (!filteredBugs.length) return "—";
+    const newest = filteredBugs
+      .map((b) => new Date(b.created_at || 0).getTime())
+      .filter((t) => Number.isFinite(t) && t > 0)
+      .sort((a, b) => b - a)[0];
+    if (!newest) return "—";
+    return `Latest: ${formatDateTime(new Date(newest).toISOString())}`;
+  }, [filteredBugs]);
+
   async function updateBugStatus(bugId, newStatus, comment = null) {
+    // optimistic update
+    const prev = bugs;
+    setBugs((cur) => cur.map((b) => (b.id === bugId ? { ...b, status: newStatus } : b)));
+
     try {
       setUpdating(true);
-      
       await apiFetch(`/api/bug_reports/${bugId}/status`, {
         method: "POST",
         body: JSON.stringify({
@@ -116,18 +310,12 @@ export default function BugBoard() {
           comment: comment || `Status changed to ${newStatus}`,
         }),
       });
-
-      // Update local state
-      setBugs((prev) =>
-        prev.map((bug) =>
-          bug.id === bugId ? { ...bug, status: newStatus } : bug
-        )
-      );
+      showToast("Status updated");
     } catch (err) {
-      console.error("Error updating bug status:", err);
-      alert(`Failed to update bug status: ${err.message}`);
-      // Reload to get correct state
-      await loadData();
+      // rollback
+      setBugs(prev);
+      setError(err?.message || "Failed to update bug status");
+      showToast("Update failed");
     } finally {
       setUpdating(false);
     }
@@ -136,145 +324,285 @@ export default function BugBoard() {
   function handleDragStart(e, bug) {
     setDraggedBug(bug);
     e.dataTransfer.effectAllowed = "move";
-    e.currentTarget.classList.add("opacity-50");
+    // needed for some browsers
+    e.dataTransfer.setData("text/plain", String(bug.id));
+    e.currentTarget.classList.add("opacity-60");
   }
 
   function handleDragEnd(e) {
-    e.currentTarget.classList.remove("opacity-50");
+    e.currentTarget.classList.remove("opacity-60");
     setDraggedBug(null);
+    setDragOverCol(null);
   }
 
-  function handleDragOver(e) {
+  function handleDragOver(e, columnId) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
+    if (dragOverCol !== columnId) setDragOverCol(columnId);
   }
 
   function handleDrop(e, columnId) {
     e.preventDefault();
-    
+    setDragOverCol(null);
+
     if (!draggedBug) return;
-    
     const newStatus = columnId;
-    if (draggedBug.status !== newStatus) {
+
+    if (String(draggedBug.status || "new") !== String(newStatus)) {
       updateBugStatus(draggedBug.id, newStatus);
     }
   }
 
-  function getBugsByStatus(status) {
-    return bugs.filter((bug) => bug.status === status);
-  }
-
-  function formatDate(dateString) {
-    if (!dateString) return "—";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("sv-SE"); // YYYY-MM-DD format
+  function bugsByStatus(status) {
+    return filteredBugs.filter((b) => String(b.status || "new") === status);
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-[calc(100vh-56px)] bg-[radial-gradient(circle_at_20%_10%,rgba(59,130,246,0.12),transparent_40%),radial-gradient(circle_at_80%_0%,rgba(99,102,241,0.10),transparent_35%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.10),transparent_40%)] flex items-center justify-center px-4">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading bug board...</p>
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+          <p className="text-slate-700 font-semibold">Loading bug board…</p>
+          <p className="mt-1 text-sm text-slate-500">Fetching bugs & project details</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
-        <div className="max-w-full mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <button
+    <div className="min-h-[calc(100vh-56px)] bg-[radial-gradient(circle_at_20%_10%,rgba(59,130,246,0.12),transparent_40%),radial-gradient(circle_at_80%_0%,rgba(99,102,241,0.10),transparent_35%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.10),transparent_40%)]">
+      {/* Sticky top bar */}
+      <div className="sticky top-0 z-20 border-b border-white/40 bg-white/70 backdrop-blur">
+        <div className="mx-auto max-w-[1600px] px-4 py-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            {/* left */}
+            <div className="flex items-center gap-3">
+              <IconButton
+                title="Back to Project"
                 onClick={() => navigate(`/projects/${projectId}`)}
-                className="text-gray-600 hover:text-gray-900 transition"
+                className="shrink-0"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M15 19l-7-7 7-7"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
-              </button>
+              </IconButton>
+
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Bug Board</h1>
-                {project && (
-                  <p className="text-sm text-gray-600">{project.name}</p>
-                )}
+                <div className="flex items-center gap-2">
+                  <span className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 shadow-sm" />
+                  <div>
+                    <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                      Bug Board
+                    </h1>
+                    <p className="text-sm text-slate-600">
+                      {project?.name ? (
+                        <>
+                          <span className="font-semibold">{project.name}</span>{" "}
+                          <span className="text-slate-400">•</span> Project #{projectId}
+                        </>
+                      ) : (
+                        <>Project #{projectId}</>
+                      )}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
-            
-            <div className="flex items-center space-x-4">
-              <div className="text-sm text-gray-600">
-                <span className="font-semibold">{bugs.length}</span> total bugs
-              </div>
-              <button
-                onClick={() => navigate(`/projects/${projectId}/bugs`)}
-                className="bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg font-medium transition border border-gray-300"
-              >
+
+            {/* right actions */}
+            <div className="flex flex-wrap items-center gap-2 justify-end">
+              <Button variant="secondary" onClick={loadData} disabled={updating}>
+                Refresh
+              </Button>
+              <Button variant="secondary" onClick={() => navigate(`/projects/${projectId}/bugs`)}>
                 📋 List View
-              </button>
-              <button
-                onClick={() => navigate(`/projects/${projectId}/bugs/new`)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition shadow-sm"
-              >
+              </Button>
+              <Button onClick={() => navigate(`/projects/${projectId}/bugs/new`)}>
                 + New Bug
-              </button>
+              </Button>
             </div>
           </div>
+
+          {/* controls */}
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-12">
+            <div className="md:col-span-5">
+              <label className="text-[11px] font-semibold text-slate-600">Search</label>
+              <div className="mt-1 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2">
+                <svg className="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M21 21l-4.3-4.3m1.8-5.2a7 7 0 11-14 0 7 7 0 0114 0z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search by id, title, description…"
+                  className="w-full bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                />
+                {q ? (
+                  <button
+                    onClick={() => setQ("")}
+                    className="rounded-lg px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                    title="Clear"
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-[11px] font-semibold text-slate-600">Severity</label>
+              <select
+                value={severity}
+                onChange={(e) => setSeverity(e.target.value)}
+                className="mt-1 w-full rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
+              >
+                {["all", "critical", "high", "medium", "low"].map((v) => (
+                  <option key={v} value={v}>
+                    {v === "all" ? "All" : v}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-[11px] font-semibold text-slate-600">Priority</label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+                className="mt-1 w-full rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
+              >
+                {["all", "critical", "high", "medium", "low"].map((v) => (
+                  <option key={v} value={v}>
+                    {v === "all" ? "All" : v}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="md:col-span-3">
+              <label className="text-[11px] font-semibold text-slate-600">Quick toggles</label>
+              <div className="mt-1 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2">
+                <input
+                  id="onlyReopened"
+                  type="checkbox"
+                  checked={onlyReopened}
+                  onChange={(e) => setOnlyReopened(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                <label htmlFor="onlyReopened" className="text-sm text-slate-700">
+                  Only reopened
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* stats */}
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+            <StatCard label="Visible bugs" value={total} hint={ageHint} />
+            <StatCard label="New" value={counts.get("new") || 0} />
+            <StatCard label="In progress" value={counts.get("in_progress") || 0} />
+            <StatCard label="Retest pending" value={counts.get("retest_pending") || 0} />
+          </div>
+
+          {error ? (
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+              <div className="font-semibold">Error</div>
+              <div className="mt-1">{error}</div>
+            </div>
+          ) : null}
+
+          {toast ? (
+            <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+              {toast}
+            </div>
+          ) : null}
         </div>
       </div>
 
-      {/* Error Display */}
-      {error && (
-        <div className="max-w-full mx-auto px-6 py-4">
-          <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4">
-            <p className="font-medium">Error</p>
-            <p className="text-sm">{error}</p>
-          </div>
-        </div>
-      )}
+      {/* Board */}
+      <div className="mx-auto max-w-[1600px] px-4 py-6">
+        <div className="flex gap-4 overflow-x-auto pb-6">
+          {COLUMNS.map((col) => {
+            const colBugs = bugsByStatus(col.id);
+            const isOver = dragOverCol === col.id;
 
-      {/* Kanban Board */}
-      <div className="max-w-full px-6 py-6">
-        <div className="flex space-x-4 overflow-x-auto pb-4">
-          {COLUMNS.map((column) => {
-            const columnBugs = getBugsByStatus(column.id);
-            
             return (
               <div
-                key={column.id}
-                className="flex-shrink-0 w-80"
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, column.id)}
+                key={col.id}
+                className="w-[340px] shrink-0"
+                onDragOver={(e) => handleDragOver(e, col.id)}
+                onDragLeave={() => setDragOverCol(null)}
+                onDrop={(e) => handleDrop(e, col.id)}
               >
-                {/* Column Header */}
-                <div className={`${column.color} border-2 rounded-t-lg px-4 py-3`}>
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-gray-800">{column.title}</h3>
-                    <span className="bg-white text-gray-700 text-sm font-semibold px-2 py-1 rounded">
-                      {columnBugs.length}
-                    </span>
+                {/* Column shell */}
+                <div
+                  className={cn(
+                    "rounded-2xl ring-1 ring-inset bg-gradient-to-b shadow-[0_1px_0_0_rgba(15,23,42,0.04)]",
+                    col.ring,
+                    col.tint,
+                    isOver ? "ring-2 ring-blue-400" : ""
+                  )}
+                >
+                  {/* Column header */}
+                  <div className="px-4 pt-4 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className={cn("h-2.5 w-2.5 rounded-full", col.dot)} />
+                          <h3 className="text-sm font-extrabold tracking-tight text-slate-900">
+                            {col.title}
+                          </h3>
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-500">{col.helper}</div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Pill className="bg-white text-slate-700 ring-slate-200" title="Count">
+                          {colBugs.length}
+                        </Pill>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Column body */}
+                  <div className="px-3 pb-3">
+                    <div
+                      className={cn(
+                        "rounded-xl border border-white/50 bg-white/55 backdrop-blur",
+                        "min-h-[420px] max-h-[calc(100vh-340px)] overflow-y-auto p-2 space-y-2"
+                      )}
+                    >
+                      {colBugs.length === 0 ? (
+                        <EmptyColumn isOver={isOver} />
+                      ) : (
+                        colBugs.map((bug) => (
+                          <BugCard
+                            key={bug.id}
+                            bug={bug}
+                            onDragStart={handleDragStart}
+                            onDragEnd={handleDragEnd}
+                            onClick={() => navigate(`/projects/${projectId}/bugs/${bug.id}`)}
+                          />
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                {/* Column Content */}
-                <div className="bg-gray-50 border-2 border-t-0 border-gray-200 rounded-b-lg min-h-[500px] max-h-[calc(100vh-300px)] overflow-y-auto p-3 space-y-3">
-                  {columnBugs.length === 0 ? (
-                    <div className="text-center text-gray-400 text-sm py-8">
-                      No bugs
-                    </div>
-                  ) : (
-                    columnBugs.map((bug) => (
-                      <BugCard
-                        key={bug.id}
-                        bug={bug}
-                        onDragStart={handleDragStart}
-                        onDragEnd={handleDragEnd}
-                        onClick={() => navigate(`/projects/${projectId}/bugs/${bug.id}`)}
-                      />
-                    ))
-                  )}
+                {/* tiny footer hint */}
+                <div className="mt-2 text-[11px] text-slate-500">
+                  Drop cards here to move to <span className="font-semibold">{col.title}</span>
                 </div>
               </div>
             );
@@ -282,71 +610,127 @@ export default function BugBoard() {
         </div>
       </div>
 
-      {/* Loading Overlay */}
-      {updating && (
-        <div className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 flex items-center space-x-3">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-            <span className="text-gray-700 font-medium">Updating status...</span>
+      {/* Updating overlay */}
+      {updating ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 backdrop-blur-sm">
+          <div className="rounded-2xl border border-white/40 bg-white/80 px-5 py-4 shadow-xl flex items-center gap-3">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+            <div className="text-sm font-semibold text-slate-800">Updating status…</div>
           </div>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+function EmptyColumn({ isOver }) {
+  return (
+    <div
+      className={cn(
+        "rounded-xl border border-dashed px-3 py-10 text-center text-sm",
+        isOver ? "border-blue-400 bg-blue-50 text-blue-700" : "border-slate-200 bg-white/40 text-slate-500"
       )}
+    >
+      <div className="mx-auto mb-2 h-10 w-10 rounded-2xl bg-white/70 ring-1 ring-slate-200 flex items-center justify-center">
+        <svg className="h-5 w-5 text-slate-400" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 5v14m-7-7h14"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
+      </div>
+      {isOver ? "Release to move here" : "No bugs"}
+      <div className="mt-1 text-[11px] opacity-80">Drag a card into this column</div>
     </div>
   );
 }
 
 function BugCard({ bug, onDragStart, onDragEnd, onClick }) {
+  const sev = String(bug.severity || "").toLowerCase();
+  const pri = String(bug.priority || "").toLowerCase();
+
+  const sevStyle = SEVERITY_STYLES[sev] || "bg-slate-50 text-slate-700 ring-slate-200";
+  const priStyle = PRIORITY_STYLES[pri] || "bg-slate-600 text-white";
+
+  // Optional fields (safe)
+  const created = formatDate(bug.created_at);
+  const updated = bug.updated_at ? formatDate(bug.updated_at) : null;
+
   return (
     <div
       draggable
       onDragStart={(e) => onDragStart(e, bug)}
       onDragEnd={onDragEnd}
       onClick={onClick}
-      className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition cursor-pointer hover:border-blue-300"
+      className={cn(
+        "group cursor-pointer rounded-2xl border border-slate-200/70 bg-white/90 shadow-[0_1px_0_0_rgba(15,23,42,0.04)]",
+        "hover:shadow-md hover:border-blue-200 transition",
+        "p-3"
+      )}
     >
-      {/* Bug ID and Severity */}
-      <div className="flex items-start justify-between mb-2">
-        <span className="text-xs font-mono text-gray-500">#{bug.id}</span>
-        <span
-          className={`text-xs font-semibold px-2 py-1 rounded ${
-            SEVERITY_COLORS[bug.severity] || "bg-gray-100 text-gray-800"
-          }`}
-        >
-          {bug.severity?.toUpperCase()}
-        </span>
+      {/* top row */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-mono text-slate-500">#{bug.id}</span>
+          {bug.test_case_id ? (
+            <Pill className="bg-slate-50 text-slate-700 ring-slate-200" title="Test case">
+              TC {bug.test_case_id}
+            </Pill>
+          ) : null}
+        </div>
+
+        <Pill className={cn("ring-1", sevStyle)} title="Severity">
+          {sev ? sev.toUpperCase() : "—"}
+        </Pill>
       </div>
 
-      {/* Title */}
-      <h4 className="font-semibold text-gray-900 mb-2 line-clamp-2 text-sm">
-        {bug.title}
-      </h4>
-
-      {/* Priority */}
-      <div className="flex items-center space-x-2 mb-3">
-        <span
-          className={`text-xs px-2 py-1 rounded font-medium ${
-            PRIORITY_COLORS[bug.priority] || "bg-gray-100 text-gray-800"
-          }`}
-        >
-          P: {bug.priority}
-        </span>
+      {/* title */}
+      <div className="mt-2">
+        <div className="text-sm font-extrabold leading-snug text-slate-900 line-clamp-2">
+          {bug.title || "Untitled bug"}
+        </div>
+        {bug.description ? (
+          <div className="mt-1 text-xs text-slate-600 line-clamp-2">{bug.description}</div>
+        ) : null}
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100">
-        <span>Created: {formatDate(bug.created_at)}</span>
-        {bug.reported_by_user_id && (
-          <span className="bg-gray-100 px-2 py-1 rounded">
-            User #{bug.reported_by_user_id}
-          </span>
-        )}
+      {/* meta chips */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold",
+            priStyle
+          )}
+          title="Priority"
+        >
+          P: {pri || "—"}
+        </span>
+
+        {bug.reported_by_user_name || bug.reported_by_user_id ? (
+          <Pill className="bg-white text-slate-700 ring-slate-200" title="Reported by">
+            {bug.reported_by_user_name ? bug.reported_by_user_name : `User #${bug.reported_by_user_id}`}
+          </Pill>
+        ) : null}
+
+        {bug.execution_id ? (
+          <Pill className="bg-indigo-50 text-indigo-700 ring-indigo-200" title="Linked execution">
+            Exec #{bug.execution_id}
+          </Pill>
+        ) : null}
+      </div>
+
+      {/* footer */}
+      <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-[11px] text-slate-500">
+        <span title={bug.created_at ? formatDateTime(bug.created_at) : ""}>Created {created}</span>
+        {updated ? <span title={bug.updated_at ? formatDateTime(bug.updated_at) : ""}>Updated {updated}</span> : <span />}
+      </div>
+
+      {/* subtle hint */}
+      <div className="mt-2 text-[11px] text-slate-400 opacity-0 group-hover:opacity-100 transition">
+        Drag to change status • Click to open
       </div>
     </div>
   );
-}
-
-function formatDate(dateString) {
-  if (!dateString) return "—";
-  const date = new Date(dateString);
-  return date.toLocaleDateString("sv-SE");
 }
